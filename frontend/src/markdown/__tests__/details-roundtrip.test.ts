@@ -140,4 +140,33 @@ describe('Editor 실제 흐름 (replaceBlocks 경유)', () => {
     const md = '# 앞\n\n<details>\n<summary>Q</summary>\n\nA\n\n</details>\n\n# 뒤\n';
     expect(await editorRoundtrip(md)).toBe(md);
   });
+
+  it('HTML 주석도 문서 삽입을 거쳐 위치 그대로 복원된다', async () => {
+    const md = '# 앞\n\n<!-- slides -->\n\n# 뒤\n';
+    expect(await editorRoundtrip(md)).toBe(md);
+  });
+});
+
+describe('HTML 주석 보존', () => {
+  it('단독 주석은 htmlComment 블록이 된다', async () => {
+    const blocks: any[] = await parseMarkdownWithDetails(newEditor(), '앞\n\n<!-- slides -->\n\n뒤\n') as any;
+    const c = blocks.find(b => b.type === 'htmlComment');
+    expect(c).toBeTruthy();
+    expect(c.props.source).toBe('<!-- slides -->');
+  });
+
+  it('주석 문서를 왕복하면 원문과 같다', async () => {
+    const md = '# 글\n\n<!-- slides -->\n\n본문\n';
+    expect(await roundtrip(md)).toBe(md);
+  });
+
+  it('여러 줄 주석도 왕복한다', async () => {
+    const md = '<!--\n메모 여러 줄\n-->\n';
+    expect(await roundtrip(md)).toBe(md);
+  });
+
+  it('details와 주석이 함께 있어도 둘 다 보존된다', async () => {
+    const md = '<details>\n<summary>Q</summary>\n\nA\n\n</details>\n\n<!-- slides -->\n';
+    expect(await roundtrip(md)).toBe(md);
+  });
 });

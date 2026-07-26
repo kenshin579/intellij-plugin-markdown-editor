@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summaryHtmlToInline, inlineToSummaryHtml, splitDetailsRuns, splitDetailsParts } from '../details';
+import { summaryHtmlToInline, inlineToSummaryHtml, splitHtmlRuns, splitDetailsParts } from '../details';
 
 describe('summaryHtmlToInline', () => {
   it('<b>와 <code>를 스타일 인라인 노드로 바꾼다', () => {
@@ -34,10 +34,10 @@ describe('inlineToSummaryHtml', () => {
   });
 });
 
-describe('splitDetailsRuns', () => {
+describe('splitHtmlRuns', () => {
   it('<details> 구간과 일반 구간을 나눈다', () => {
     const md = '앞\n\n<details>\n<summary>Q</summary>\n\nA\n\n</details>\n\n뒤\n';
-    expect(splitDetailsRuns(md)).toEqual([
+    expect(splitHtmlRuns(md)).toEqual([
       { kind: 'plain', text: '앞\n' },
       { kind: 'details', text: '<details>\n<summary>Q</summary>\n\nA\n\n</details>' },
       { kind: 'plain', text: '\n뒤\n' },
@@ -46,18 +46,18 @@ describe('splitDetailsRuns', () => {
 
   it('연속된 details를 각각 분리한다', () => {
     const md = '<details>\n<summary>Q1</summary>\n\nA1\n\n</details>\n\n<details>\n<summary>Q2</summary>\n\nA2\n\n</details>\n';
-    const runs = splitDetailsRuns(md);
+    const runs = splitHtmlRuns(md);
     expect(runs.filter(r => r.kind === 'details')).toHaveLength(2);
   });
 
   it('코드펜스 안의 <details>는 구간으로 잡지 않는다', () => {
     const md = '```html\n<details>\n<summary>예시</summary>\n</details>\n```\n';
-    expect(splitDetailsRuns(md)).toEqual([{ kind: 'plain', text: md }]);
+    expect(splitHtmlRuns(md)).toEqual([{ kind: 'plain', text: md }]);
   });
 
   it('닫히지 않은 <details>는 일반 구간으로 남긴다 (가드가 저장을 막게)', () => {
     const md = '<details>\n<summary>Q</summary>\n\nA\n';
-    expect(splitDetailsRuns(md)).toEqual([{ kind: 'plain', text: md }]);
+    expect(splitHtmlRuns(md)).toEqual([{ kind: 'plain', text: md }]);
   });
 });
 
@@ -82,5 +82,34 @@ describe('splitDetailsParts', () => {
 
   it('summary가 없으면 null (details로 다루지 않는다)', () => {
     expect(splitDetailsParts('<details>\n\n본문\n\n</details>')).toBeNull();
+  });
+});
+
+describe('splitHtmlRuns: HTML 주석', () => {
+  it('단독 줄 주석을 구간으로 잡는다', () => {
+    const md = '앞\n\n<!-- slides -->\n\n뒤\n';
+    expect(splitHtmlRuns(md)).toEqual([
+      { kind: 'plain', text: '앞\n' },
+      { kind: 'comment', text: '<!-- slides -->' },
+      { kind: 'plain', text: '\n뒤\n' },
+    ]);
+  });
+
+  it('여러 줄 주석도 한 구간으로 잡는다', () => {
+    const md = '<!--\n메모 여러 줄\n-->\n';
+    expect(splitHtmlRuns(md)).toEqual([
+      { kind: 'comment', text: '<!--\n메모 여러 줄\n-->' },
+      { kind: 'plain', text: '' },
+    ]);
+  });
+
+  it('코드펜스 안의 주석은 구간으로 잡지 않는다', () => {
+    const md = '```html\n<!-- 예시 -->\n```\n';
+    expect(splitHtmlRuns(md)).toEqual([{ kind: 'plain', text: md }]);
+  });
+
+  it('줄 중간의 주석은 건드리지 않는다', () => {
+    const md = '문장 <!-- 인라인 --> 계속\n';
+    expect(splitHtmlRuns(md)).toEqual([{ kind: 'plain', text: md }]);
   });
 });

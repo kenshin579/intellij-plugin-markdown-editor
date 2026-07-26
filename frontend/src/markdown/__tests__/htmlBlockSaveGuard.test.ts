@@ -44,34 +44,39 @@ async function roundtrip(body: string): Promise<string> {
   ));
 }
 
-describe('raw HTML 블록 저장 손실 (엔드투엔드)', () => {
-  it('<details>와 질문 텍스트는 접기 블록 처리로 보존된다', async () => {
+describe('처리 대상 raw HTML 은 보존된다', () => {
+  it('<details>·질문 텍스트·HTML 주석이 모두 살아남는다', async () => {
     const next = await roundtrip(BODY);
     expect(next).toContain('<details>');
     expect(next).toContain('<summary><b>Q1.</b>');
     expect(next).toContain('아무것도 실행하지 않나');
+    expect(next).toContain('<!-- slides -->');
   });
 
-  it('HTML 주석은 여전히 소실된다 — 아직 처리 대상이 아니다', async () => {
+  it('퀴즈 문서 저장이 더 이상 차단되지 않는다', async () => {
     const next = await roundtrip(BODY);
-    expect(next).not.toContain('<!-- slides -->');
+    expect(checkSaveSafety(BODY, next).safe).toBe(true);
   });
+});
 
-  it('길이 기반 가드로는 못 잡는 주석 손실을 HTML 가드가 차단한다', async () => {
-    const next = await roundtrip(BODY);
-    // 주석 한 줄이 사라져도 감소폭은 차단 기준(50%)에 한참 못 미쳐 길이 검사는 통과한다.
-    const shrinkRatio = (BODY.length - next.length) / BODY.length;
-    expect(shrinkRatio).toBeLessThan(0.5);
-
-    const guard = checkSaveSafety(BODY, next);
+describe('아직 처리하지 않는 raw HTML 은 가드가 막는다', () => {
+  it('<div> 래퍼는 소실되며 저장이 차단된다', async () => {
+    const body = '# 글\n\n<div align="center">\n\n본문이 충분히 길게 이어진다\n\n</div>\n';
+    const next = await roundtrip(body);
+    // 오탐이 아니라 진짜 손실임을 먼저 확인한다
+    expect(next).not.toContain('<div');
+    const guard = checkSaveSafety(body, next);
     expect(guard.safe).toBe(false);
     expect(guard.reason).toMatch(/html/i);
+    expect(guard.reason).toMatch(/div/);
   });
 
-  it('주석이 없으면 details 문서는 저장이 허용된다', async () => {
-    const body = BODY.replace('<!-- slides -->\n\n', '');
+  it('길이가 거의 안 줄어도 차단한다 — 길이 기반 검사로는 못 잡는다', async () => {
+    const body = '# 글\n\n<div>\n\n' + '본문이 아주 길게 이어지는 문단이다. '.repeat(10) + '\n\n</div>\n';
     const next = await roundtrip(body);
-    expect(checkSaveSafety(body, next).safe).toBe(true);
+    const shrinkRatio = (body.length - next.length) / body.length;
+    expect(shrinkRatio).toBeLessThan(0.5);
+    expect(checkSaveSafety(body, next).safe).toBe(false);
   });
 });
 

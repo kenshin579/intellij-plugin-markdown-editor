@@ -1,9 +1,16 @@
-// <details> 접기 블록 지원 (렌더 + 무손실 라운드트립)
+// raw HTML 블록 보존 (렌더 + 무손실 라운드트립)
 //
-// BlockNote의 마크다운 파서는 raw HTML 블록을 버리므로 <details>/<summary>가 통째로
-// 사라진다(saveGuard 가 그 저장을 막는다). 이 모듈은 로드 시 <details> 구간을 직접
-// 인식해 BlockNote 기본 toggleListItem 블록으로 조립하고, 저장 시 원래 HTML 구조로
-// 되돌린다. 안쪽 본문은 일반 마크다운으로 파싱되므로 그대로 편집할 수 있다.
+// BlockNote의 마크다운 파서는 raw HTML 블록을 버리므로 <details>/<summary>와 HTML
+// 주석이 통째로 사라진다(saveGuard 가 그 저장을 막는다). 이 모듈은 로드 시 해당
+// 구간을 직접 인식해 블록으로 조립하고, 저장 시 원래 HTML 구조로 되돌린다.
+//
+//   <details> → BlockNote 기본 toggleListItem (접기 UI·자식 편집을 그대로 활용).
+//               안쪽 본문은 일반 마크다운으로 파싱되므로 그대로 편집할 수 있다.
+//   <!-- … --> → htmlComment 블록. 편집 대상이 아니라 위치를 지켜야 하는 마커라
+//                (blog-v2 의 `<!-- slides -->`) 원문을 props 에 담아두기만 한다.
+//
+// 여기서 다루지 않는 raw HTML(<div> 래퍼 등)은 여전히 파서가 버리며, 그 저장은
+// saveGuard 가 차단한다.
 //
 // CommonMark 에서 아래 문서는 HTML 블록 하나가 아니라 세 덩어리로 쪼개진다(빈 줄이
 // HTML 블록을 끝낸다). 그래서 파서에 맡기지 않고 구간을 직접 잡아야 한다.
@@ -24,6 +31,8 @@ type AnyBlock = { type: string; props?: Record<string, any>; content?: any; chil
 // BlockNote 기본 접기 블록. 스키마에 이미 들어 있어(defaultBlockSpecs) 접기 UI·자식
 // 편집·키보드 동작을 그대로 쓴다. 이 모듈은 마크다운 ↔ <details> 변환만 담당한다.
 const TOGGLE = 'toggleListItem';
+// 원문 주석을 그대로 담아 위치만 지키는 블록 (HtmlCommentBlock).
+const COMMENT = 'htmlComment';
 
 // summary 안에서 쓰이는 인라인 태그 → BlockNote 스타일 키.
 // blog-v2 전체를 조사한 결과 실제로 등장하는 것은 <b> 와 <code> 뿐이지만,
@@ -88,20 +97,21 @@ function escapeText(s: string): string {
 // (같은 순서를 쓰면 왕복이 안정적이다)
 const STYLE_TO_TAG: [string, string][] = [['bold', 'b'], ['italic', 'i'], ['code', 'code']];
 
-export type DetailsRun = { kind: 'details' | 'plain'; text: string };
+export type HtmlRun = { kind: 'details' | 'comment' | 'plain'; text: string };
 
 const OPEN_RE = /^ {0,3}<details\b[^>]*>\s*$/i;
 const CLOSE_RE = /^ {0,3}<\/details>\s*$/i;
 const FENCE_RE = /^ {0,3}(```|~~~)/;
+const COMMENT_OPEN_RE = /^ {0,3}<!--/;
 
 // 본문을 <details>…</details> 구간과 나머지 구간으로 나눈다.
 // - 코드펜스 안은 건드리지 않는다.
 // - 중첩 <details>는 가장 바깥 짝까지 한 구간으로 잡는다.
 // - 닫는 태그를 못 찾으면 details 로 인정하지 않고 일반 구간에 남긴다. 그러면
 //   BlockNote 가 그 HTML을 버리고 saveGuard 가 저장을 막는다(조용한 손실보다 낫다).
-export function splitDetailsRuns(body: string): DetailsRun[] {
+export function splitHtmlRuns(body: string): HtmlRun[] {
   const lines = body.split('\n');
-  const runs: DetailsRun[] = [];
+  const runs: HtmlRun[] = [];
   let plain: string[] = [];
   let inFence = false;
 
@@ -114,6 +124,23 @@ export function splitDetailsRuns(body: string): DetailsRun[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (FENCE_RE.test(line)) inFence = !inFence;
+
+    // 단독 HTML 주석(<!-- … -->). 줄 시작에서 열리고 닫는 --> 뒤에 내용이 없어야
+    // 한 구간으로 잡는다. 줄 중간 주석은 문단의 일부이므로 건드리지 않는다.
+    if (!inFence && COMMENT_OPEN_RE.test(line)) {
+      let end = -1;
+      for (let j = i; j < lines.length; j++) {
+        if (lines[j].includes('-->')) { end = j; break; }
+      }
+      const tail = end === -1 ? null : lines[end].slice(lines[end].lastIndexOf('-->') + 3);
+      if (end !== -1 && tail!.trim() === '') {
+        flushPlain();
+        runs.push({ kind: 'comment', text: lines.slice(i, end + 1).join('\n') });
+        i = end;
+        continue;
+      }
+    }
+
     if (inFence || !OPEN_RE.test(line)) { plain.push(line); continue; }
 
     // 짝이 맞는 </details> 를 찾는다(중첩 고려, 펜스 무시).
@@ -174,7 +201,11 @@ export async function parseMarkdownWithDetails(
   body: string,
 ): Promise<AnyBlock[]> {
   const out: AnyBlock[] = [];
-  for (const run of splitDetailsRuns(body)) {
+  for (const run of splitHtmlRuns(body)) {
+    if (run.kind === 'comment') {
+      out.push({ type: COMMENT, props: { source: run.text } });
+      continue;
+    }
     const parts = run.kind === 'details' ? splitDetailsParts(run.text) : null;
     if (!parts) {
       // 일반 구간, 또는 <summary> 가 없어 접기로 만들 수 없는 details
@@ -223,6 +254,9 @@ export async function serializeBlocksWithDetails(
     if (block.type === TOGGLE) {
       await flush();
       parts.push(await serializeDetails(editor, block));
+    } else if (block.type === COMMENT) {
+      await flush();
+      parts.push(block.props?.source ?? '');
     } else {
       buffer.push(block);
     }
