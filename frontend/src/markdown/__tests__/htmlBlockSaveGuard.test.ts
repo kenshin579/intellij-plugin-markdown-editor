@@ -1,13 +1,13 @@
 // raw HTML 블록 저장 손실 엔드투엔드 회귀 테스트.
 //
-// 실제 BlockNote 파싱/직렬화를 거쳐, <details> 퀴즈 섹션을 가진 문서를 편집 없이
-// 라운드트립했을 때 (1) HTML이 실제로 소실되고 (2) saveGuard가 그 저장을 차단하는지
-// 검증한다. 유닛 테스트와 달리 파서 동작 변화까지 잡아낸다.
+// Editor.tsx 의 저장 경로를 그대로 재현해, 파서가 다루지 못하는 raw HTML 이 남아 있으면
+// saveGuard 가 그 저장을 차단하는지 검증한다. <details> 는 details.ts 가 접기 블록으로
+// 처리하므로 이제 보존되지만, HTML 주석 등 나머지는 여전히 소실되며 가드가 막아야 한다.
 import { describe, it, expect } from 'vitest';
 import { BlockNoteEditor } from '@blocknote/core';
 import { schema } from '../../editor/schema';
 import { postParse, preSerialize } from '../customParse';
-import { parseMarkdownWithBlockquotes, serializeBlocksWithBlockquotes } from '../blockquote';
+import { parseMarkdownWithDetails, serializeBlocksWithDetails } from '../details';
 import { maskTableImages, unmaskTableImages } from '../tableImage';
 import { maskTableBreaks, unmaskBreakTokens } from '../tableLineBreak';
 import { checkSaveSafety } from '../saveGuard';
@@ -37,35 +37,46 @@ const BODY = `# 5. 퀴즈
 // Editor.tsx 의 저장 경로와 동일한 순서로 본문을 재직렬화한다.
 async function roundtrip(body: string): Promise<string> {
   const editor = BlockNoteEditor.create({ schema } as any);
-  const blocks = await parseMarkdownWithBlockquotes(editor, maskTableBreaks(maskTableImages(body)));
+  const blocks = await parseMarkdownWithDetails(editor, maskTableBreaks(maskTableImages(body)));
   const parsed = postParse(blocks as any);
   return unmaskTableImages(unmaskBreakTokens(
-    await serializeBlocksWithBlockquotes(editor, preSerialize(parsed as any) as any),
+    await serializeBlocksWithDetails(editor, preSerialize(parsed as any) as any),
   ));
 }
 
-describe('raw HTML 블록 저장 손실 (엔드투엔드)', () => {
-  it('BlockNote 라운드트립은 <details>/<summary>/주석을 실제로 잃는다', async () => {
+describe('처리 대상 raw HTML 은 보존된다', () => {
+  it('<details>·질문 텍스트·HTML 주석이 모두 살아남는다', async () => {
     const next = await roundtrip(BODY);
-    expect(next).not.toContain('<details>');
-    expect(next).not.toContain('<summary');
-    expect(next).not.toContain('<!-- slides -->');
-    // 질문 텍스트까지 통째로 사라진다 (증상의 본체)
-    expect(next).not.toContain('아무것도 실행하지 않나');
+    expect(next).toContain('<details>');
+    expect(next).toContain('<summary><b>Q1.</b>');
+    expect(next).toContain('아무것도 실행하지 않나');
+    expect(next).toContain('<!-- slides -->');
   });
 
-  it('길이 기반 가드로는 못 잡는 손실을 HTML 가드가 차단한다', async () => {
+  it('퀴즈 문서 저장이 더 이상 차단되지 않는다', async () => {
     const next = await roundtrip(BODY);
-    // 테이블 셀 패딩이 손실분을 상쇄해 감소폭이 차단 기준(50%)에 한참 못 미친다.
-    // 실제 go-fx 글(738줄)에서는 패딩 증가가 손실을 넘어서 총 글자 수가 오히려 늘었다.
-    // 어느 쪽이든 길이 기반 검사만으로는 통과해버린다는 게 요점.
-    const shrinkRatio = (BODY.length - next.length) / BODY.length;
-    expect(shrinkRatio).toBeLessThan(0.5);
+    expect(checkSaveSafety(BODY, next).safe).toBe(true);
+  });
+});
 
-    const guard = checkSaveSafety(BODY, next);
+describe('아직 처리하지 않는 raw HTML 은 가드가 막는다', () => {
+  it('<div> 래퍼는 소실되며 저장이 차단된다', async () => {
+    const body = '# 글\n\n<div align="center">\n\n본문이 충분히 길게 이어진다\n\n</div>\n';
+    const next = await roundtrip(body);
+    // 오탐이 아니라 진짜 손실임을 먼저 확인한다
+    expect(next).not.toContain('<div');
+    const guard = checkSaveSafety(body, next);
     expect(guard.safe).toBe(false);
     expect(guard.reason).toMatch(/html/i);
-    expect(guard.reason).toMatch(/details/);
+    expect(guard.reason).toMatch(/div/);
+  });
+
+  it('길이가 거의 안 줄어도 차단한다 — 길이 기반 검사로는 못 잡는다', async () => {
+    const body = '# 글\n\n<div>\n\n' + '본문이 아주 길게 이어지는 문단이다. '.repeat(10) + '\n\n</div>\n';
+    const next = await roundtrip(body);
+    const shrinkRatio = (body.length - next.length) / body.length;
+    expect(shrinkRatio).toBeLessThan(0.5);
+    expect(checkSaveSafety(body, next).safe).toBe(false);
   });
 });
 
