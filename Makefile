@@ -52,8 +52,12 @@ check-gh:
 	@command -v gh >/dev/null 2>&1 || { \
 		echo "ERROR: gh CLI not found (install: https://cli.github.com)"; exit 1; \
 	}
-	@gh auth status >/dev/null 2>&1 || { \
-		echo "ERROR: gh CLI is not authenticated (run 'gh auth login')"; exit 1; \
+	@# --hostname 없이 호출하면 설정된 모든 호스트를 검사하고, 하나라도 실패하면
+	@# 종료 코드가 1이 된다. 사내 GitHub Enterprise 등을 함께 등록해 둔 환경에서는
+	@# 그쪽 타임아웃 때문에 github.com 인증이 멀쩡해도 릴리스가 막힌다.
+	@# 릴리스가 실제로 필요한 호스트는 github.com 하나뿐이라 범위를 좁힌다.
+	@gh auth status --hostname github.com >/dev/null 2>&1 || { \
+		echo "ERROR: gh CLI is not authenticated for github.com (run 'gh auth login --hostname github.com')"; exit 1; \
 	}
 
 bump-version: check-version check-main check-clean
