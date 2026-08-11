@@ -15,13 +15,19 @@ import { createVcsPlugin, setVcsMarkers, createEmptyMarkers, type VcsMarkerState
 
 const RECOMPUTE_DEBOUNCE_MS = 300;
 const BASELINE_RELOAD_DEBOUNCE_MS = 500;
+// 'unavailable'이 이 횟수만큼 연속으로 오면 재조회를 끈다. 프로젝트 기동 직후에는 VCS
+// 루트 매핑이 아직 등록되지 않아 첫 응답만 일시적으로 unavailable일 수 있으므로 1로 두면
+// 그 탭은 파일을 닫았다 열기 전까지 영영 마커를 못 받는다(실패가 조용해 사용자도 모른다).
+const UNAVAILABLE_LATCH_THRESHOLD = 2;
 
 export function useVcsMarkers(editor: BlockNoteEditor<any, any, any>, bridge: MarkoraBridge): void {
   const baselineKeysRef = useRef<string[] | null>(null);
   // 마지막으로 파싱한 baseline 원문. 같으면 재파싱을 건너뛴다.
   const lastBaselineRawRef = useRef<string | null>(null);
-  // 'unavailable' 응답을 받으면 이 파일에 대한 재조회를 완전히 끈다.
+  // 'unavailable' 응답이 연속 UNAVAILABLE_LATCH_THRESHOLD회 오면 이 파일에 대한 재조회를 완전히 끈다.
   const disabledRef = useRef(false);
+  // 연속 unavailable 횟수. non-unavailable 응답을 받으면 0으로 리셋된다.
+  const unavailableCountRef = useRef(0);
   const baselineEditorRef = useRef<BlockNoteEditor<any, any, any> | null>(null);
   const timerRef = useRef<number | null>(null);
   const baselineTimerRef = useRef<number | null>(null);
@@ -79,14 +85,21 @@ export function useVcsMarkers(editor: BlockNoteEditor<any, any, any>, bridge: Ma
     try {
       const { status, content } = await bridge.fetchVcsBaseline();
       if (status === 'unavailable') {
-        disabledRef.current = true;
+        // 프로젝트 기동 직후에는 VCS 루트 매핑이 아직 등록되지 않아 일시적으로
+        // unavailable이 나올 수 있다. 첫 응답만으로 영구히 끄면 그 탭은 파일을 닫았다
+        // 열기 전까지 마커가 영영 없고, 실패가 조용해서 사용자는 이유도 알 수 없다.
+        // 연속 UNAVAILABLE_LATCH_THRESHOLD회째부터 latch한다.
+        unavailableCountRef.current += 1;
+        if (unavailableCountRef.current >= UNAVAILABLE_LATCH_THRESHOLD) disabledRef.current = true;
         baselineKeysRef.current = null;
         lastBaselineRawRef.current = null;
       } else if (content === null) {
         // untracked — 비교 대상이 없다.
+        unavailableCountRef.current = 0;
         baselineKeysRef.current = null;
         lastBaselineRawRef.current = null;
       } else {
+        unavailableCountRef.current = 0;
         // 같은 baseline을 다시 파싱하지 않는다. Kotlin의 changeListUpdateDone은 편집 중
         // 분당 여러 번 발화하는데(자동저장 → VFS 변경 → changelist 갱신) HEAD 본문은
         // 커밋/브랜치 전환 전까지 그대로다. 원문이 같으면 파싱도 diff도 건너뛴다.

@@ -96,8 +96,15 @@ describe('useVcsMarkers (e2e)', () => {
     expect(fetchVcsBaseline).toHaveBeenCalledTimes(1);
   });
 
-  it('unavailable 응답이면 마커가 없고, 이후 onVcsChange가 발생해도 재조회하지 않는다 (disabledRef 래치)', async () => {
-    const { editor, host } = await mountCurrentEditor('# T\n\npara\n');
+  // unavailable 연속 횟수에 따른 latch 동작. 프로젝트 기동 직후에는 VCS 루트 매핑이
+  // 아직 등록되지 않아 첫 응답만 일시적으로 unavailable일 수 있으므로, 1회만으로 영구히
+  // latch하면 그 탭은 파일을 닫았다 열기 전까지 마커를 영영 못 받는다. 연속
+  // UNAVAILABLE_LATCH_THRESHOLD(=2)회부터 latch되고, 성공 응답이 오면 카운터가 리셋된다.
+
+  it('unavailable 1회 뒤 성공 응답이 오면 마커가 나타난다 (기동 직후 일시적 unavailable에서 복구)', async () => {
+    const mdCurrent = '# T\n\npara one\n\npara two original\n';
+    const mdBaseline = '# T\n\npara one\n\npara two BASELINE\n';
+    const { editor, host } = await mountCurrentEditor(mdCurrent);
     const { bridge, fetchVcsBaseline, setBaseline, fireVcsChange } = createStubBridge();
     setBaseline({ status: 'unavailable', content: null });
 
@@ -109,18 +116,95 @@ describe('useVcsMarkers (e2e)', () => {
       );
       await flushMicrotasks();
 
-      expect(fetchVcsBaseline).toHaveBeenCalledTimes(1);
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(1); // 1회차: unavailable
       expect(host.querySelectorAll('[class*="markora-vcs-"]').length).toBe(0);
 
+      // VCS 루트 매핑이 늦게 등록된 뒤 재조회에서 성공 응답이 온다.
+      setBaseline({ status: 'changed', content: mdBaseline });
       fireVcsChange();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(BASELINE_RELOAD_DEBOUNCE_MS);
       });
       await flushMicrotasks();
 
-      // disabledRef가 켜져 있으므로 onVcsChange가 다시 발화해도 fetch가 다시 일어나지 않는다.
-      expect(fetchVcsBaseline).toHaveBeenCalledTimes(1);
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(2); // latch되지 않아 재조회가 일어났다
+      expect(host.querySelectorAll('.markora-vcs-modified').length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('연속 2회 unavailable이면 latch되어 이후 onVcsChange가 발생해도 재조회하지 않는다', async () => {
+    const { editor, host } = await mountCurrentEditor('# T\n\npara\n');
+    const { bridge, fetchVcsBaseline, setBaseline, fireVcsChange } = createStubBridge();
+    setBaseline({ status: 'unavailable', content: null });
+
+    vi.useFakeTimers();
+    try {
+      renderHook(
+        ({ editor: e, bridge: b }) => useVcsMarkers(e, b),
+        { initialProps: { editor, bridge } },
+      );
+      await flushMicrotasks();
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(1); // 1회차: unavailable
+
+      // 2회차 unavailable — 이 시점에 latch된다 (threshold=2).
+      fireVcsChange();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BASELINE_RELOAD_DEBOUNCE_MS);
+      });
+      await flushMicrotasks();
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(2);
       expect(host.querySelectorAll('[class*="markora-vcs-"]').length).toBe(0);
+
+      // 3회차 발화 — disabledRef가 켜져 있으므로 fetch가 다시 일어나지 않는다.
+      fireVcsChange();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BASELINE_RELOAD_DEBOUNCE_MS);
+      });
+      await flushMicrotasks();
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(2);
+      expect(host.querySelectorAll('[class*="markora-vcs-"]').length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('unavailable → 성공 → unavailable → 성공 은 latch되지 않는다 (연속 실패만 카운트된다)', async () => {
+    const mdCurrent = '# T\n\npara one\n\npara two original\n';
+    const mdBaseline = '# T\n\npara one\n\npara two BASELINE\n';
+    const { editor, host } = await mountCurrentEditor(mdCurrent);
+    const { bridge, fetchVcsBaseline, setBaseline, fireVcsChange } = createStubBridge();
+
+    async function settle() {
+      fireVcsChange();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BASELINE_RELOAD_DEBOUNCE_MS);
+      });
+      await flushMicrotasks();
+    }
+
+    vi.useFakeTimers();
+    try {
+      setBaseline({ status: 'unavailable', content: null });
+      renderHook(
+        ({ editor: e, bridge: b }) => useVcsMarkers(e, b),
+        { initialProps: { editor, bridge } },
+      );
+      await flushMicrotasks(); // 1회차: unavailable (count=1)
+
+      setBaseline({ status: 'changed', content: mdBaseline });
+      await settle(); // 2회차: 성공 — count가 0으로 리셋된다
+      expect(host.querySelectorAll('.markora-vcs-modified').length).toBe(1);
+
+      setBaseline({ status: 'unavailable', content: null });
+      await settle(); // 3회차: unavailable (리셋 후라 count=1, threshold 미달)
+      expect(host.querySelectorAll('[class*="markora-vcs-"]').length).toBe(0);
+
+      setBaseline({ status: 'changed', content: mdBaseline });
+      await settle(); // 4회차: 성공 — latch되지 않았으므로 정상적으로 재조회되어 마커가 다시 나타난다
+      expect(fetchVcsBaseline).toHaveBeenCalledTimes(4);
+      expect(host.querySelectorAll('.markora-vcs-modified').length).toBe(1);
     } finally {
       vi.useRealTimers();
     }
