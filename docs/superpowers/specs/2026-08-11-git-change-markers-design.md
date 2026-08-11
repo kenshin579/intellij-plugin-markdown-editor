@@ -263,6 +263,12 @@ CSS가 로드되지 않는 vitest 환경에서는 확인할 수 없어 `./gradle
 2. 마커가 붙은 블록에 준 `position: relative`가 코드블록의 언어 선택 `<select>` 위치를 흔들지 않는지
 3. 다크 테마에서 마커 색 대비
 
+## 알려진 한계
+
+**여러 프로젝트가 동시에 열려 있으면 잘못된 프로젝트를 고른다.** `VcsBaselineController`는 `ProjectManager.getInstance().openProjects.firstOrNull()`로 프로젝트를 잡는데, 이는 요청된 파일이 속한 프로젝트가 아니라 그냥 첫 번째로 열린 프로젝트다. 창이 여러 개면 `ProjectLevelVcsManager.getVcsFor()`가 엉뚱한 프로젝트에 대고 물어, 실제로는 VCS 하위인 파일을 `unavailable`로 보고할 수 있다.
+
+이 관용구는 `MarkdownFileController.handleSave`에서 그대로 가져온 것이라 이 기능이 새로 만든 문제는 아니다. 다만 파일 읽기/저장보다 VCS 조회가 프로젝트 스코프에 더 민감하다. 고치려면 `ProjectLocator.getInstance().guessProjectForFile(virtualFile)`로 파일에서 프로젝트를 역추적해야 하는데, 그러면 형제 컨트롤러들과 관용구가 갈라지므로 세 곳을 함께 바꾸는 별도 작업으로 다루는 게 맞다.
+
 ## 후속 작업 (범위 밖)
 
 - 마커 클릭 시 이전 내용 팝업 + rollback

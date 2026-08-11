@@ -959,6 +959,7 @@ package com.github.kenshin579.markora.controller
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
@@ -1008,6 +1009,10 @@ object VcsBaselineController {
 
         val json = try {
             resolve(filePath)
+        } catch (e: ProcessCanceledException) {
+            // 플랫폼 규약: PCE는 제어 흐름 신호이므로 삼키지 말고 반드시 다시 던진다.
+            // 아래 Exception 절이 먼저 잡으면 취소가 무시돼 플랫폼 상태가 어긋난다.
+            throw e
         } catch (e: Exception) {
             // VcsException 등 — 마커를 못 그릴 뿐이므로 조용히 unavailable로 응답한다.
             LOG.warn("VCS baseline lookup failed for $filePath", e)
