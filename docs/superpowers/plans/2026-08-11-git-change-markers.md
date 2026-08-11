@@ -503,7 +503,10 @@ export interface DiffResult {
   deletionAtEnd: boolean;
 }
 
-/** 절단 후 남은 구간이 양쪽 모두 이 값을 넘으면 마커를 생략한다. */
+/**
+ * 절단 후 남은 두 구간의 곱이 이 값의 제곱을 넘으면 마커를 생략한다.
+ * LCS 비용이 O(n·m)이므로 가드는 한쪽 길이가 아니라 셀 개수에 걸어야 한다.
+ */
 export const MAX_DIFF_SPAN = 1000;
 
 type Op =
@@ -571,7 +574,7 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
   const baseMid = baseKeys.slice(p, baseKeys.length - s);
   const currMid = currKeys.slice(p, currKeys.length - s);
   if (baseMid.length === 0 && currMid.length === 0) return result;
-  if (baseMid.length > MAX_DIFF_SPAN && currMid.length > MAX_DIFF_SPAN) return result;
+  if (baseMid.length * currMid.length > MAX_DIFF_SPAN * MAX_DIFF_SPAN) return result;
 
   const ops = editScript(baseMid, currMid, p);
   // 변경 구간 뒤에 남아 있는 첫 현재 인덱스. 삭제 run이 문서 뒤쪽 공통 구간에
@@ -637,6 +640,14 @@ Expected: PASS — 13 tests
 git add frontend/src/vcs/blockDiff.ts frontend/src/vcs/__tests__/blockDiff.test.ts
 git commit -m "feat(vcs): 블록 LCS diff와 modified 승격 휴리스틱 추가"
 ```
+
+**구현 후 보강 (코드 리뷰 결과 반영).** 위 코드에서 세 가지가 더 바뀌었다.
+
+1. 크기 가드를 곱 기준으로 교체 — 위 코드 블록에 이미 반영돼 있다. 원래의 `&&` 조건은 999×50000 같은 비대칭 입력을 통과시켰고 실측 271ms / 400MB가 나왔다.
+2. orphan 삭제 run의 anchor를 찾을 때 쓰던 `ops.slice(n).find(...)`를 인덱스 전진 스캔으로 교체. 매번 `ops` 잔여 구간을 복사하던 것을 없앴다 — 키 입력마다 도는 경로다.
+3. `Op` 판별 유니온을 우회하던 `as { currIdx: number }` 캐스팅 3개를 `currIdxOf(op)` 헬퍼로 교체. 캐스팅을 두면 run 경계 로직이 바뀔 때 컴파일러가 못 잡는다.
+
+테스트도 2개 추가했다. 독립적인 삭제 run 두 개가 한 diff에 있을 때 `deletionsBefore`와 `deletionAtEnd`가 서로를 덮지 않는지, 그리고 modified 인덱스가 삭제 마커를 함께 갖는 공존 케이스. Task 9가 두 필드를 같이 소비하므로 고정해 둘 값어치가 있다.
 
 ---
 
