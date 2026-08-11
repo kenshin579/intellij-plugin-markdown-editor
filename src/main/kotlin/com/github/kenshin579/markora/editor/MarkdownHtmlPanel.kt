@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vcs.changes.ChangeListListener
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.IdeFrame
 import com.intellij.ui.jcef.JBCefBrowser
@@ -35,6 +36,7 @@ class MarkdownHtmlPanel(
         setupHandlers()
         loadEditor()
         subscribeExternalChangeReload()
+        subscribeVcsChange()
     }
 
     // IDE가 다시 활성화될 때(터미널/다른 앱에서 돌아옴) 디스크 상태가 외부에서 변경됐을 수
@@ -52,6 +54,19 @@ class MarkdownHtmlPanel(
                         "try { if (window.markora && typeof window.markora.reloadFromDisk === 'function') { window.markora.reloadFromDisk(); } } catch (e) { console.warn('reloadFromDisk failed', e); }"
                     )
                 }
+            }
+        })
+    }
+
+    // 커밋 / 브랜치 전환 / stage 등으로 VCS 상태가 바뀌면 baseline이 달라진다.
+    // ChangeListManager의 갱신 완료 시점에 JS로 알려 baseline을 다시 받게 한다.
+    private fun subscribeVcsChange() {
+        val connection = project.messageBus.connect(this)
+        connection.subscribe(ChangeListListener.TOPIC, object : ChangeListListener {
+            override fun changeListUpdateDone() {
+                executeJavaScript(
+                    "try { if (window.markora && typeof window.markora.vcsChanged === 'function') { window.markora.vcsChanged(); } } catch (e) { console.warn('vcsChanged failed', e); }"
+                )
             }
         })
     }
