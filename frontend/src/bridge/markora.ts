@@ -1,4 +1,4 @@
-import type { BridgeContext, MarkoraBridge, Theme, UploadResult } from '../types';
+import type { BridgeContext, MarkoraBridge, Theme, UploadResult, VcsBaseline } from '../types';
 import { splitFrontmatter, joinFrontmatter } from './transform';
 import { rewriteImagePathsForDisplay, restoreImagePaths, dirOf } from './imageMap';
 
@@ -13,6 +13,7 @@ export function parseQueryContext(href: string): BridgeContext {
 export function createBridge(ctx: BridgeContext): MarkoraBridge {
   const themeListeners = new Set<(t: Theme) => void>();
   const reloadListeners = new Set<() => void>();
+  const vcsListeners = new Set<() => void>();
   // (BlockNote가 재작성한 절대 이미지 URL → 원본 경로) 매핑. 저장 시 역변환에 사용.
   const imageMap = new Map<string, string>();
   // (local-image URL → 원본 HTML <img> 태그 전체) 매핑. 저장 시 markdown 이미지를
@@ -27,6 +28,9 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       },
       reloadFromDisk: () => {
         reloadListeners.forEach(cb => cb());
+      },
+      vcsChanged: () => {
+        vcsListeners.forEach(cb => cb());
       },
     };
   }
@@ -110,6 +114,20 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       reloadListeners.add(cb);
       return () => reloadListeners.delete(cb);
     },
+
+    async fetchVcsBaseline(): Promise<VcsBaseline> {
+      const res = await fetch(
+        `${ctx.serverUrl}api/vcs/baseline?path=${encodeURIComponent(ctx.filePath)}`
+      );
+      if (!res.ok) throw new Error(`fetchVcsBaseline failed: ${res.status}`);
+      const data = await res.json();
+      return { status: data.status, content: data.content ?? null };
+    },
+
+    onVcsChange(cb) {
+      vcsListeners.add(cb);
+      return () => vcsListeners.delete(cb);
+    },
   };
 }
 
@@ -118,10 +136,12 @@ export function createMockBridge(): MarkoraBridge {
   let storedMd = '# Markora dev mock\n\n*편집 가능합니다.*\n';
   const themeListeners = new Set<(t: Theme) => void>();
   const reloadListeners = new Set<() => void>();
+  const vcsListeners = new Set<() => void>();
   if (typeof window !== 'undefined') {
     window.markora = {
       applyTheme: (t: Theme) => themeListeners.forEach(cb => cb(t)),
       reloadFromDisk: () => reloadListeners.forEach(cb => cb()),
+      vcsChanged: () => vcsListeners.forEach(cb => cb()),
     };
   }
   return {
@@ -141,5 +161,9 @@ export function createMockBridge(): MarkoraBridge {
     async uploadImage(file: File) { return { url: URL.createObjectURL(file) }; },
     onThemeChange(cb) { themeListeners.add(cb); return () => themeListeners.delete(cb); },
     onReloadRequest(cb) { reloadListeners.add(cb); return () => reloadListeners.delete(cb); },
+    async fetchVcsBaseline(): Promise<VcsBaseline> {
+      return { status: 'unavailable', content: null };
+    },
+    onVcsChange(cb) { vcsListeners.add(cb); return () => vcsListeners.delete(cb); },
   };
 }

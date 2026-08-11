@@ -242,3 +242,40 @@ describe('createMockBridge', () => {
     expect(body).toBe('# Body\n');
   });
 });
+
+describe('fetchVcsBaseline', () => {
+  it('엔드포인트 응답을 그대로 돌려준다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'changed', content: '# old\n' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const bridge = createBridge({ filePath: '/p/a.md', serverUrl: 'http://x/', initialTheme: 'light' });
+    await expect(bridge.fetchVcsBaseline()).resolves.toEqual({ status: 'changed', content: '# old\n' });
+    expect(fetchMock).toHaveBeenCalledWith('http://x/api/vcs/baseline?path=%2Fp%2Fa.md');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('content가 없으면 null로 채운다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'untracked' }),
+    }));
+    const bridge = createBridge({ filePath: '/p/a.md', serverUrl: 'http://x/', initialTheme: 'light' });
+    await expect(bridge.fetchVcsBaseline()).resolves.toEqual({ status: 'untracked', content: null });
+    vi.unstubAllGlobals();
+  });
+
+  it('window.markora.vcsChanged가 리스너를 호출한다', () => {
+    const bridge = createBridge({ filePath: '/p/a.md', serverUrl: 'http://x/', initialTheme: 'light' });
+    const cb = vi.fn();
+    const unsub = bridge.onVcsChange(cb);
+    window.markora.vcsChanged();
+    expect(cb).toHaveBeenCalledTimes(1);
+    unsub();
+    window.markora.vcsChanged();
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
