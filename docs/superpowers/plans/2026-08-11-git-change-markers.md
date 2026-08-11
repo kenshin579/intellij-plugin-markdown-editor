@@ -22,6 +22,14 @@
 - `BlockNoteEditor.create({ schema })` 는 mount 없이도 `replaceBlocks` / `document` 가 동작한다 (`src/markdown/__tests__/integration.test.ts` 선례).
 - `.bn-editor` 는 `padding-inline: 54px` 을 가진다.
 
+**Kotlin 태스크(5~7, 11) 빌드 주의.** 이 호스트의 기본 `java`는 25이고 Gradle 8.13은 JDK 25에서 실행을 거부하며 `* What went wrong: 25.0.2` 같은 모호한 메시지로 실패한다. `build.gradle.kts`에 `jvmToolchain(21)`이 있어도 Gradle **데몬 자체**가 호스트 java로 뜨므로 소용없다. 모든 Gradle 명령 앞에 붙일 것:
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+```
+
+(2026-08-11 기준 이 경로에 21.0.11 존재 확인. `/usr/libexec/java_home -V`에는 25만 잡히므로 경로를 직접 지정해야 한다.)
+
 ## 파일 구조
 
 **신규 (frontend)**
