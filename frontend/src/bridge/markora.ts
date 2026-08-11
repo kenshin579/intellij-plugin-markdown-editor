@@ -1,6 +1,6 @@
 import type { BridgeContext, MarkoraBridge, Theme, UploadResult } from '../types';
 import { splitFrontmatter, joinFrontmatter } from './transform';
-import { rewriteImagePathsForDisplay, restoreImagePaths } from './imageMap';
+import { rewriteImagePathsForDisplay, restoreImagePaths, dirOf } from './imageMap';
 
 export function parseQueryContext(href: string): BridgeContext {
   const url = new URL(href);
@@ -44,8 +44,7 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       // 본문의 상대경로 이미지를 디스크에서 서빙되는 local-image URL로 재작성한다.
       // (그래야 BlockNote <img>가 실제 파일을 가리켜 렌더링됨) 동시에 저장 시 원본
       // 상대경로로 되돌리기 위한 매핑을 등록한다.
-      const normalized = ctx.filePath.replace(/\\/g, '/');
-      const mdDir = normalized.substring(0, normalized.lastIndexOf('/'));
+      const mdDir = dirOf(ctx.filePath);
       const { body: rewritten, map, htmlMap } = rewriteImagePathsForDisplay(body, mdDir, ctx.serverUrl);
       for (const [url, original] of map) {
         imageMap.set(url, original);
@@ -94,8 +93,7 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
         throw new Error(`uploadImage: server returned no succMap entries (code=${json?.code})`);
       }
       const relativePath = succMap[firstKey] as string;
-      const normalized = ctx.filePath.replace(/\\/g, '/');
-      const dir = normalized.substring(0, normalized.lastIndexOf('/'));
+      const dir = dirOf(ctx.filePath);
       const absolutePath = `${dir}/${relativePath}`;
       const url = `${ctx.serverUrl}api/local-image?path=${encodeURIComponent(absolutePath)}`;
       // 저장 시 이 절대 URL을 파일에는 상대경로로 기록하도록 매핑 등록

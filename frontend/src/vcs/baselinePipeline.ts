@@ -1,6 +1,6 @@
 import type { BlockNoteEditor } from '@blocknote/core';
 import { splitFrontmatter } from '../bridge/transform';
-import { rewriteImagePathsForDisplay } from '../bridge/imageMap';
+import { rewriteImagePathsForDisplay, dirOf } from '../bridge/imageMap';
 import { maskTableImages } from '../markdown/tableImage';
 import { maskTableBreaks } from '../markdown/tableLineBreak';
 import { parseMarkdownWithDetails } from '../markdown/details';
@@ -24,8 +24,7 @@ export async function markdownToBlocks(
   raw: string,
 ): Promise<AnyBlock[]> {
   const { body } = splitFrontmatter(raw);
-  const normalized = filePath.replace(/\\/g, '/');
-  const mdDir = normalized.substring(0, normalized.lastIndexOf('/'));
+  const mdDir = dirOf(filePath);
   const { body: rewritten } = rewriteImagePathsForDisplay(body, mdDir, serverUrl);
   const blocks = await parseMarkdownWithDetails(editor, maskTableBreaks(maskTableImages(rewritten)));
   return postParse(blocks as any) as AnyBlock[];

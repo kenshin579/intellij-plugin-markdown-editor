@@ -23,6 +23,19 @@ const HTML_IMG_RE = /<img\b[^>]*>/gi;
 const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const DATA_URL_RE = /^data:/i;
 
+// 마크다운 파일의 절대경로에서 상대경로 해석 기준이 되는 디렉터리를 뽑는다.
+// bridge/markora.ts(loadFile/uploadImage)와 vcs/baselinePipeline.ts가 동일한 로직을
+// 각자 복붙해 갖고 있었다 — baseline/현재 문서 변환이 byte-identical해야 한다는
+// 이 기능의 전제상, 셋 중 하나만 고치고 나머지를 놓치면 오탐이 조용히 재발한다.
+// 알려진 한계(기존 동작 그대로 보존): 파일시스템 루트의 `/doc.md`처럼 슬래시가 파일명
+// 앞에 하나뿐이면 lastIndexOf가 그 슬래시 위치(0)를 찾아 substring(0,0) = ''가 된다
+// (기대할 수 있는 '/'가 아니라 빈 문자열). 저장 경로 동작을 바꾸지 않기 위해
+// 이 태스크에서는 고치지 않는다.
+export function dirOf(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.substring(0, normalized.lastIndexOf('/'));
+}
+
 // `dir` 기준으로 상대경로 `rel`을 디스크 절대경로로 해석한다. `.`/`..` 세그먼트 처리.
 function resolveAgainstDir(dir: string, rel: string): string {
   const parts = dir.replace(/\\/g, '/').replace(/\/+$/, '').split('/');
