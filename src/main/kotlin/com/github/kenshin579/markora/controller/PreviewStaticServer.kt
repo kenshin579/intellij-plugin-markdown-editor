@@ -36,6 +36,8 @@ class PreviewStaticServer : HttpRequestHandler() {
                 ImageUploadController.handle(urlDecoder, request, context)
             path.startsWith("api/local-image") ->
                 LocalImageController.handle(urlDecoder, request, context)
+            path.startsWith("api/vcs") ->
+                VcsBaselineController.handle(urlDecoder, request, context)
             path.startsWith("resources/") ->
                 ResourcesController.handle(path.removePrefix("resources/"), request, context, this)
             else -> false
