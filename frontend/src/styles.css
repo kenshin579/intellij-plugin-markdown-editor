@@ -337,10 +337,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .markora-shell {
   --markora-vcs-added: #59a869;
   --markora-vcs-modified: #4a86c8;
+  /* 삭제는 수정과 다른 색이어야 한다. 같은 팔레트에서 파랑이 '수정'을 뜻하는데
+     삭제 삼각형까지 파랑이면 잘못된 정보를 준다. IDE도 삭제에 별도 색을 쓴다. */
+  --markora-vcs-deleted: #9a9a9a;
 }
 [data-mantine-color-scheme="dark"] .markora-shell {
   --markora-vcs-added: #4f8a5b;
   --markora-vcs-modified: #3d6a99;
+  --markora-vcs-deleted: #6e6e6e;
 }
 
 .markora-shell .bn-block-content.markora-vcs-added,
@@ -375,7 +379,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   left: -52px;
   width: 0;
   height: 0;
-  border-left: 6px solid var(--markora-vcs-modified);
+  border-left: 6px solid var(--markora-vcs-deleted);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   pointer-events: none;
