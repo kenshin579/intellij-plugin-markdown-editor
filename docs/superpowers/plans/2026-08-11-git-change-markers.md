@@ -854,6 +854,14 @@ git add frontend/src/vcs/vcsPlugin.ts frontend/src/vcs/__tests__/vcsPlugin.test.
 git commit -m "feat(vcs): 블록 마커 ProseMirror decoration 플러그인 추가"
 ```
 
+**구현 후 보강 (코드 리뷰 결과 반영).** 위 코드에서 세 가지가 바뀌었다. **Task 9는 아래 형태를 전제로 한다.**
+
+1. `EMPTY_MARKERS` 상수를 없애고 `createEmptyMarkers(): VcsMarkerState` 팩토리로 교체했다. 모듈 수준 싱글턴이 mutable한 `Map`/`Set`을 들고 있어서, 호출부가 `state.statuses.set(...)`으로 제자리 변경하면 그 탭이 사는 동안 "비어 있음"의 의미가 영구히 깨진다. `Object.freeze`로는 못 막는다 — `Map.set`은 얼린 객체의 자체 속성을 거치지 않는다.
+2. decoration 생성을 `props.decorations()`에서 `apply()`로 옮겼다. 원래 코드는 커서 이동을 포함한 **모든** 트랜잭션마다 문서 전체를 순회했다(2000 블록에서 1.0ms). `searchPlugin.ts`는 비싼 계산을 `apply()`에서 하고 `decorations()`는 캐시된 값만 읽는데, 그 패턴을 따르도록 맞췄다. 플러그인 상태가 `{ markers, decorations }`로 넓어졌다.
+3. `collectBlockSpans`의 순회가 inline/text 리프까지 내려가던 것을 content 노드에서 잘라냈다.
+
+테스트도 3개 추가했다. 가장 중요한 것은 **`setVcsMarkers`가 문서를 dirty로 만들지 않는다**는 회귀 테스트다 — 이 에디터는 `onChange`에 자동저장이 걸려 있어서, 누가 나중에 `setVcsMarkers`에 문서를 건드리는 스텝을 넣으면 마커 갱신마다 저장이 돌게 된다. `docChanged === false`와 `editor.onChange` 스파이 미호출을 양쪽 다 검증한다.
+
 ---
 
 ### Task 5: JSON 이스케이프 헬퍼 추출 (Kotlin)
@@ -1321,7 +1329,7 @@ import { schema } from '../editor/schema';
 import { markdownToBlocks } from './baselinePipeline';
 import { flattenBlocks, type AnyBlock } from './blockKey';
 import { diffBlocks } from './blockDiff';
-import { createVcsPlugin, setVcsMarkers, EMPTY_MARKERS, type VcsMarkerState } from './vcsPlugin';
+import { createVcsPlugin, setVcsMarkers, createEmptyMarkers, type VcsMarkerState } from './vcsPlugin';
 
 const RECOMPUTE_DEBOUNCE_MS = 300;
 
@@ -1350,7 +1358,7 @@ export function useVcsMarkers(editor: BlockNoteEditor<any, any, any>, bridge: Ma
     if (!view) return;
     const base = baselineKeysRef.current;
     if (!base) {
-      setVcsMarkers(view, EMPTY_MARKERS);
+      setVcsMarkers(view, createEmptyMarkers());
       return;
     }
     const current = flattenBlocks(editor.document as unknown as AnyBlock[]);
@@ -1577,6 +1585,8 @@ Run: `./gradlew runIde`
 | 13 | git 저장소 아닌 폴더의 .md | 마커 없음, 콘솔 에러 없음 |
 | 14 | 새로 만든 .md (untracked) | 마커 없음 |
 | 15 | 타이핑 중 반응 | 약 300ms 후 마커 갱신, 깜빡임 없음 |
+| 16 | **중첩 블록으로 끝나는 문서의 끝부분 삭제** | 삼각형이 들여쓰기만큼 안쪽으로 밀리지 않고 좌측 gutter에 정렬됨 |
+| 17 | 문단 중간에서 Enter로 블록 분할 | 최대 300ms 마커 공백 후 정상 복귀 (아래 설명 참조) |
 
 - [ ] **Step 3: 문제 발생 시 대응**
 

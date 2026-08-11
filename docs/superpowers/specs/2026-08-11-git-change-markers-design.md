@@ -186,6 +186,8 @@ splitFrontmatter → rewriteImagePathsForDisplay → maskTableImages
 
 외부 편집 reload(`bridge.onReloadRequest`) 직후에도 재계산한다.
 
+**디바운스가 만드는 과도 상태.** 마커 상태는 블록 `id`로 조회하는데, 사용자가 문단 중간에서 Enter를 누르면 BlockNote가 나뉜 쪽에 새 `id`를 부여한다. 그 블록은 다음 재계산까지 최대 300ms 동안 마커가 없다. 반대로 오래된 `id`는 조회에서 그냥 빗나가므로 잘못된 블록에 마커가 붙는 일은 없다 — 표시가 늦을 뿐 틀리지는 않는다. 마커가 장식이고 파괴적이지 않으므로 이 과도 상태는 받아들인다.
+
 ### 렌더링
 
 `searchPlugin`의 명령형 API를 따라 `setVcsStatus(view, statusMap)` 하나로 상태를 주입한다. 플러그인이 문서를 순회하며 블록 `id`로 상태를 조회해 `Decoration.node`에 클래스를 붙인다.
