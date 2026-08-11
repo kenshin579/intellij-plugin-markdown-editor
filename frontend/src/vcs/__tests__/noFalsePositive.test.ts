@@ -7,23 +7,6 @@ import { flattenBlocks } from '../blockKey';
 const FILE_PATH = '/proj/docs/doc.md';
 const SERVER_URL = 'http://localhost:63342/markora/';
 
-// 이 Node 버전은 전역 localStorage(node --localstorage-file 관련 경고 참고)를 미리 심어두는데,
-// getItem이 없는 반쪽짜리 getter/setter라 happy-dom의 구현을 밀어낸다. BlockNote의
-// toggleListItem(ToggleWrapper)이 mount 시 이를 읽으므로(details 샘플), 여기서
-// 최소 메모리 구현으로 덮어써 실제 mount 동작을 검증할 수 있게 한다. 설계 전제와는
-// 무관한 테스트 환경 이슈다.
-if (typeof (window.localStorage as any)?.getItem !== 'function') {
-  const store = new Map<string, string>();
-  (window as any).localStorage = {
-    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
-    setItem: (k: string, v: string) => { store.set(k, String(v)); },
-    removeItem: (k: string) => { store.delete(k); },
-    clear: () => store.clear(),
-    key: (i: number) => Array.from(store.keys())[i] ?? null,
-    get length() { return store.size; },
-  };
-}
-
 /** 현재 문서 측: 파이프라인 통과 후 실제 에디터 문서에 반영해 PM 정규화까지 거친다. */
 async function currentKeys(md: string): Promise<string[]> {
   const editor = BlockNoteEditor.create({ schema });
