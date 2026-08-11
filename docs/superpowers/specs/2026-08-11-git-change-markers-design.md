@@ -112,11 +112,13 @@ ChangeListManager
 | 조건 | status | content |
 |------|--------|---------|
 | `ProjectLevelVcsManager.getVcsFor(file) == null` | `unavailable` | `null` |
-| change 없음 (VCS 하위, 미변경) | `unchanged` | `null` |
+| change 없음 (VCS 하위, 미변경) | `unchanged` | 현재 디스크 본문 (= HEAD 본문) |
 | change 있고 `beforeRevision == null` (신규 파일) | `untracked` | `null` |
 | change 있고 `beforeRevision` 존재 | `changed` | HEAD 원문 |
 
-`unchanged`와 `unavailable`을 구분하는 이유: 둘 다 마커가 0개지만 후자는 재조회 자체가 무의미하므로 프론트가 폴링을 끈다.
+`unchanged`에도 본문을 실어 보낸다. `null`로 두면 자동저장(1초 디바운스)이 실행되기 전에 편집한 내용이 마커에 반영되지 않는 구간이 생긴다. 미변경 파일은 디스크 본문이 곧 HEAD 본문이므로 그대로 넘기면 되고, 프론트는 `changed`와 `unchanged`를 동일하게 처리한다.
+
+`unavailable`은 재조회 자체가 무의미하므로 프론트가 폴링을 끈다. `untracked`는 비교 대상이 없어 마커가 0개다.
 
 **프론트 — 신규 디렉터리 `frontend/src/vcs/`**
 
@@ -235,16 +237,26 @@ CSS `::before`가 `.bn-editor`의 54px 좌측 여백 바깥쪽 끝에 3px 세로
 
 `VcsBaselineController`의 상태 분기 테스트는 IDE fixture 비용이 커서 자동화하지 않는다. `runIde` 수동 검증으로 갈음한다.
 
+## 실측으로 확정된 사항
+
+계획 작성 중 실제 코드로 확인했다.
+
+- ProseMirror 문서 구조는 `blockGroup > blockContainer(attrs.id) > <contentNode>` 이며, 중첩 블록은 부모 `blockContainer` **안쪽**에 들어간다. 따라서 decoration을 `blockContainer`에 걸면 자식 높이까지 덮인다. **첫 자식(content 노드)에 걸어야** 하며, 그러면 DOM `.bn-block-content`에 클래스가 붙어 그 블록 자신의 높이만 차지한다. heading / bulletListItem / codeBlock에서 확인했고, 중첩 자식이 독립적으로 마커를 받는 것도 확인했다.
+- `ContentRevision.getContent()`는 read action **바깥에서** 호출한다. 느린 연산을 read action 안에 두면 write action을 막아 UI가 멎을 수 있다. read action 안에서는 어느 리비전을 읽을지만 결정한다.
+
+### baseline도 전용 에디터 인스턴스를 거쳐야 한다
+
+`editor.document`는 ProseMirror가 기본 props를 채워 정규화한 블록을 돌려주는 반면, `tryParseMarkdownToBlocks` 직후의 블록은 그렇지 않다. baseline 블록을 파싱 직후 상태로 두고 현재 문서와 비교하면 props 차이로 전부 오탐한다.
+
+따라서 baseline도 자기 `BlockNoteEditor` 인스턴스에 `replaceBlocks`로 통과시켜 같은 정규화를 거치게 한다. 인스턴스는 지연 생성해 재사용하며, 재파싱은 git 상태가 바뀔 때만 일어난다.
+
 ## 구현 중 확인해야 할 항목
 
-계산상 여유가 있으나 실물 확인이 필요한 항목:
+CSS가 로드되지 않는 vitest 환경에서는 확인할 수 없어 `./gradlew runIde` 샌드박스에서 봐야 하는 항목:
 
-1. `Decoration.node`를 붙일 ProseMirror 노드 레벨(BlockNote의 `blockContainer` 구조 확인)
-2. `.bn-block-outer`의 `position` 값(`::before` 절대 위치 기준이 되는지)
-3. 3px 마커 바와 BlockNote drag handle의 좌표 충돌 여부(hover 메뉴 offset이 버전에 따라 다름)
-4. `ChangeListManager` 접근에 read action이 필요한지
-
-1~3은 `./gradlew runIde` 샌드박스에서 확인한다.
+1. 3px 마커 바와 BlockNote drag handle의 좌표 충돌 여부(hover 메뉴 offset이 버전에 따라 다름)
+2. 마커가 붙은 블록에 준 `position: relative`가 코드블록의 언어 선택 `<select>` 위치를 흔들지 않는지
+3. 다크 테마에서 마커 색 대비
 
 ## 후속 작업 (범위 밖)
 
