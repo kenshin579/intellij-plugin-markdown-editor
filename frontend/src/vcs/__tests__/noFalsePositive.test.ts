@@ -12,8 +12,10 @@ async function currentKeys(md: string): Promise<string[]> {
   const editor = BlockNoteEditor.create({ schema });
   const blocks = await markdownToBlocks(editor, FILE_PATH, SERVER_URL, md);
   editor.replaceBlocks(editor.document, blocks as any);
-  // 실전의 현재 문서는 mount된 EditorView 안에 산다. baseline(비mount)과의
-  // 비대칭을 재현해야 이 테스트가 결정성이 아니라 설계 전제를 검증한다.
+  // 실전의 현재 문서는 mount된 EditorView 안에 산다. baseline(비mount)과의 비대칭을
+  // 재현해 두 쪽이 실제로 다른 경로로 만들어지게 한다. mount는 NodeView 생성(예:
+  // ToggleWrapper의 localStorage 접근)을 트리거하므로 크래시 발생 경로를 넓힌다 —
+  // mount 자체가 editor.document의 내용을 바꾼다는 근거는 아직 없다(확인된 바 없음).
   const host = document.createElement('div');
   document.body.appendChild(host);
   editor.mount(host);
@@ -41,6 +43,11 @@ const SAMPLES: Array<[string, string]> = [
   ['details', '<details>\n<summary>제목</summary>\n\n본문\n\n</details>\n'],
   ['frontmatter 포함', '---\ntitle: T\n---\n\n# Body\n\npara\n'],
   ['한글 혼합 문서', '# 제목\n\n한글 문단입니다.\n\n- 항목 하나\n- 항목 둘\n'],
+  ['테이블 셀 이미지', '| h1 | h2 |\n| --- | --- |\n| ![alt](images/pic.png) | b |\n'],
+  ['테이블 셀 줄바꿈', '| h1 | h2 |\n| --- | --- |\n| a<br>b | c |\n'],
+  ['단독 HTML 주석', '<!-- marker -->\n\n본문\n'],
+  ['취소선과 단일 틸드 혼용', '~~취소선~~ 그리고 범위 0.4~1.0 입니다.\n'],
+  ['raw img 태그', '<img src="images/pic.png" alt="alt text" />\n'],
 ];
 
 describe('설계 전제: 같은 문서면 변경 0개', () => {
