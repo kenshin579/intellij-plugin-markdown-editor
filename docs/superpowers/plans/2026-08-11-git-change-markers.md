@@ -640,7 +640,7 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
 - [ ] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/vcs/__tests__/blockDiff.test.ts`
-Expected: PASS — 13 tests
+Expected: PASS — 13 tests (아래 보강에서 2개가 더해져 최종 15개가 된다)
 
 - [ ] **Step 5: 커밋**
 
@@ -1032,6 +1032,9 @@ object VcsBaselineController {
                     return@Computable Plan.Unavailable
                 }
                 val change = ChangeListManager.getInstance(project).getChange(virtualFile)
+                // beforeRevision은 Java getter라 when 분기 사이에 스마트 캐스트가 안 된다.
+                // 한 번만 읽어 지역 val에 담아야 !! 없이 넘길 수 있다.
+                val beforeRevision = change?.beforeRevision
                 when {
                     // VCS 하위이지만 변경 없음 → 디스크 본문이 곧 HEAD 본문이다.
                     change == null -> {
@@ -1039,8 +1042,8 @@ object VcsBaselineController {
                         Plan.Inline("unchanged", text)
                     }
                     // 신규 파일 — 비교 대상이 없다. IDE도 이 경우 gutter 마커를 그리지 않는다.
-                    change.beforeRevision == null -> Plan.Untracked
-                    else -> Plan.FromRevision(change.beforeRevision!!)
+                    beforeRevision == null -> Plan.Untracked
+                    else -> Plan.FromRevision(beforeRevision)
                 }
             }
         )
