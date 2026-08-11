@@ -329,3 +329,57 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   resize: vertical;
 }
 
+/* ---- VCS change markers ----
+ * decoration은 .bn-block-content 에 붙는다(vcsPlugin.ts 참조). 마커 바는 ::before,
+ * 삭제 삼각형은 ::after 를 쓴다 — 한 블록이 둘 다 가질 수 있다.
+ * 절대 위치의 기준을 만들기 위해 마커가 붙은 블록에만 position:relative 를 준다.
+ */
+.markora-shell {
+  --markora-vcs-added: #59a869;
+  --markora-vcs-modified: #4a86c8;
+}
+[data-mantine-color-scheme="dark"] .markora-shell {
+  --markora-vcs-added: #4f8a5b;
+  --markora-vcs-modified: #3d6a99;
+}
+
+.markora-shell .bn-block-content.markora-vcs-added,
+.markora-shell .bn-block-content.markora-vcs-modified,
+.markora-shell .bn-block-content.markora-vcs-deleted-before,
+.markora-shell .bn-block-content.markora-vcs-deleted-after {
+  position: relative;
+}
+
+.markora-shell .bn-block-content.markora-vcs-added::before,
+.markora-shell .bn-block-content.markora-vcs-modified::before {
+  content: '';
+  position: absolute;
+  left: -50px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 1px;
+  pointer-events: none;
+}
+.markora-shell .bn-block-content.markora-vcs-added::before {
+  background: var(--markora-vcs-added);
+}
+.markora-shell .bn-block-content.markora-vcs-modified::before {
+  background: var(--markora-vcs-modified);
+}
+
+.markora-shell .bn-block-content.markora-vcs-deleted-before::after,
+.markora-shell .bn-block-content.markora-vcs-deleted-after::after {
+  content: '';
+  position: absolute;
+  left: -52px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--markora-vcs-modified);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  pointer-events: none;
+}
+.markora-shell .bn-block-content.markora-vcs-deleted-before::after { top: -4px; }
+.markora-shell .bn-block-content.markora-vcs-deleted-after::after { bottom: -4px; }
+
