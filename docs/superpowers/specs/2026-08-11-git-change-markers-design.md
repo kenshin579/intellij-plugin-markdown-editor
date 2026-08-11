@@ -255,6 +255,16 @@ CSS `::before`가 `.bn-editor`의 54px 좌측 여백 바깥쪽 끝에 3px 세로
 
 따라서 baseline도 자기 `BlockNoteEditor` 인스턴스에 `replaceBlocks`로 통과시켜 같은 정규화를 거치게 한다. 인스턴스는 지연 생성해 재사용하며, 재파싱은 git 상태가 바뀔 때만 일어난다.
 
+### 마커 바 높이는 `height: 100%` 로 준다 (`top:0; bottom:0` 금지)
+
+`.bn-block-content` 는 row flex 컨테이너다. 이걸 포함 블록으로 갖는 절대 위치 유사요소에서 `top: 0; bottom: 0` 으로 높이를 늘리면 Chromium 에서 **높이가 0 으로 붕괴한다.** 배경색·좌표·폭은 모두 정상으로 계산되고 `getComputedStyle` 도 정상값을 돌려주는데 그릴 면적만 없어서, 마커가 아무 신호 없이 안 보인다.
+
+첫 구현이 정확히 이 함정에 빠졌고, 증상이 "기능 전체가 동작 안 함"과 구분되지 않았다. 진단에는 JCEF 콘솔을 IDE 로그로 넘기는 임시 계측과 브라우저에서 유사요소를 극단적 스타일로 강제 렌더해보는 대조 실험이 필요했다.
+
+**vitest 는 `css: false` 로 돌기 때문에 이 부류는 자동 테스트로 잡히지 않는다.** `styles.css` 의 주석이 유일한 방어선이다.
+
+같은 뿌리의 선례: 커스텀 블록(mermaid/katex)이 row flex item 이라 `flex: 1` 없이는 폭이 안 늘어나는 문제.
+
 ## 구현 중 확인해야 할 항목
 
 CSS가 로드되지 않는 vitest 환경에서는 확인할 수 없어 `./gradlew runIde` 샌드박스에서 봐야 하는 항목:

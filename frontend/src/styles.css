@@ -354,13 +354,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   position: relative;
 }
 
+/* height:100% 를 쓰고 bottom 은 건드리지 않는다. .bn-block-content 는 row flex 컨테이너라
+ * (같은 이유로 커스텀 블록도 flex:1 이 필요하다), 이걸 포함 블록으로 갖는 절대 위치
+ * 유사요소에서 `top:0; bottom:0` 으로 높이를 늘리면 Chromium 에서 높이가 0 으로 붕괴한다.
+ * 배경색·좌표·폭은 정상 계산되는데 그릴 면적만 없어서, 마커가 조용히 안 보인다.
+ * DO NOT 다시 top/bottom 쌍으로 되돌리지 말 것 — 자동 테스트로 못 잡는다(vitest 는 css:false). */
 .markora-shell .bn-block-content.markora-vcs-added::before,
 .markora-shell .bn-block-content.markora-vcs-modified::before {
   content: '';
   position: absolute;
   left: -50px;
   top: 0;
-  bottom: 0;
+  height: 100%;
   width: 3px;
   border-radius: 1px;
   pointer-events: none;
