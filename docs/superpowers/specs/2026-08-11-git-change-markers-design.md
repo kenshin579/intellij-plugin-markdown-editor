@@ -1,7 +1,7 @@
 # Git 변경분 마커(gutter change marker) 표시 설계
 
 - 날짜: 2026-08-11
-- 상태: 설계 확정 (미구현)
+- 상태: 구현 완료 (자동 테스트 397개 통과 · `./gradlew build` 성공 · **runIde 수동 검증 미실시**)
 - 대상 저장소: `markora/` (Kotlin + frontend)
 
 ## 배경 / 문제
@@ -208,7 +208,7 @@ CSS `::before`가 `.bn-editor`의 54px 좌측 여백 바깥쪽 끝에 3px 세로
 
 **전부 조용히 처리한다.** baseline fetch 실패, `unavailable`, `untracked` — 모두 마커 0개이며 상태바에 아무것도 표시하지 않는다. VCS 표시가 안 된다고 편집 흐름을 방해할 이유가 없다.
 
-- `unavailable`인 경우에만 재조회를 완전히 중단한다.
+- `unavailable`인 경우에만 재조회를 중단하되, **연속 2회**부터 중단한다. 프로젝트 기동 직후에는 VCS 루트 매핑이 아직 등록되지 않아 일시적으로 `unavailable`이 나올 수 있다. 첫 응답만으로 영구히 끄면 그 탭은 파일을 닫았다 열기 전까지 마커가 영영 없고, 실패가 조용해서 사용자는 이유조차 알 수 없다. 성공 응답이 오면 카운터를 0으로 되돌린다.
 - 신규 파일(`untracked`)에 마커가 없는 것은 IDE와 동일한 동작이다.
 - 파일이 미저장 상태여도 baseline은 HEAD 그대로다(정상).
 - `ContentRevision.getContent()`는 느린 연산이며 `VcsException`을 던질 수 있다. Netty 핸들러는 EDT가 아닌 워커 스레드에서 실행되므로 블로킹은 문제없다. 예외는 잡아서 `unavailable`로 응답한다.
