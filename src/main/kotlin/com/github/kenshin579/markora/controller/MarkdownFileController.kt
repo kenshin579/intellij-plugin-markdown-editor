@@ -56,12 +56,7 @@ object MarkdownFileController {
             }
         )
 
-        val escapedContent = content
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
+        val escapedContent = escapeJsonString(content)
 
         sendJsonResponse(request, context, HttpResponseStatus.OK, """{"content":"$escapedContent"}""")
         return true
