@@ -84,4 +84,18 @@ describe('diffBlocks', () => {
     expect(r.deletionsBefore.size).toBe(0);
     expect(r.deletionAtEnd).toBe(false);
   });
+
+  it('독립된 삭제 두 곳 → deletionsBefore와 deletionAtEnd가 함께 존재한다', () => {
+    const r = diffBlocks(['P', 'DEL1', 'P2', 'DEL2'], ['P', 'P2']);
+    expect(r.statuses.size).toBe(0);
+    expect([...r.deletionsBefore]).toEqual([1]);
+    expect(r.deletionAtEnd).toBe(true);
+  });
+
+  it('modified 블록 앞에도 삭제 삼각형이 함께 붙을 수 있다', () => {
+    const r = diffBlocks(['A', 'B', 'C', 'D'], ['A', 'X']);
+    expect(r.statuses.get(1)).toBe('modified');
+    expect([...r.deletionsBefore]).toEqual([1]);
+    expect(r.deletionAtEnd).toBe(false);
+  });
 });

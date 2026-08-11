@@ -14,13 +14,24 @@ export interface DiffResult {
   deletionAtEnd: boolean;
 }
 
-/** 절단 후 남은 구간이 양쪽 모두 이 값을 넘으면 마커를 생략한다. */
+/**
+ * 절단 후 남은 두 구간의 길이 곱(= LCS DP 테이블 셀 수)이 이 값의 제곱을 넘으면
+ * 마커를 생략한다. 비용은 한쪽 길이가 아니라 n·m 셀 수에 좌우되므로, 한쪽만 큰
+ * 비대칭 구간(예: base=999, curr=50000)도 이 예산으로 걸러진다.
+ */
 export const MAX_DIFF_SPAN = 1000;
 
 type Op =
   | { kind: 'equal'; currIdx: number }
   | { kind: 'del' }
   | { kind: 'ins'; currIdx: number };
+
+// Op이 currIdx를 갖는 종류인지 타입 수준에서 확인한다. 캐스팅으로 판별 유니온을
+// 우회하면 run 경계 로직이 바뀔 때 컴파일러가 잡아주지 못한다.
+function currIdxOf(op: Op): number {
+  if (op.kind === 'del') throw new Error('currIdxOf: del op has no currIdx');
+  return op.currIdx;
+}
 
 function emptyResult(): DiffResult {
   return { statuses: new Map(), deletionsBefore: new Set(), deletionAtEnd: false };
@@ -82,7 +93,7 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
   const baseMid = baseKeys.slice(p, baseKeys.length - s);
   const currMid = currKeys.slice(p, currKeys.length - s);
   if (baseMid.length === 0 && currMid.length === 0) return result;
-  if (baseMid.length > MAX_DIFF_SPAN && currMid.length > MAX_DIFF_SPAN) return result;
+  if (baseMid.length * currMid.length > MAX_DIFF_SPAN * MAX_DIFF_SPAN) return result;
 
   const ops = editScript(baseMid, currMid, p);
   // 변경 구간 뒤에 남아 있는 첫 현재 인덱스. 삭제 run이 문서 뒤쪽 공통 구간에
@@ -100,7 +111,7 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
       let j = i;
       while (j < ops.length && ops[j].kind === 'ins') j++;
       for (let k = i; k < j; k++) {
-        result.statuses.set((ops[k] as { currIdx: number }).currIdx, 'added');
+        result.statuses.set(currIdxOf(ops[k]), 'added');
       }
       i = j;
       continue;
@@ -113,7 +124,7 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
     while (n < ops.length && ops[n].kind === 'ins') n++;
 
     const delCount = d - i;
-    const insIdx = ops.slice(d, n).map((o) => (o as { currIdx: number }).currIdx);
+    const insIdx = ops.slice(d, n).map((o) => currIdxOf(o));
     const paired = Math.min(delCount, insIdx.length);
     for (let k = 0; k < insIdx.length; k++) {
       result.statuses.set(insIdx[k], k < paired ? 'modified' : 'added');
@@ -124,8 +135,9 @@ export function diffBlocks(baseKeys: string[], currKeys: string[]): DiffResult {
       if (insIdx.length > 0) {
         anchor = insIdx[0];
       } else {
-        const next = ops.slice(n).find((o) => o.kind !== 'del') as { currIdx: number } | undefined;
-        anchor = next ? next.currIdx : afterMid;
+        let k = n;
+        while (k < ops.length && ops[k].kind === 'del') k++;
+        anchor = k < ops.length ? currIdxOf(ops[k]) : afterMid;
       }
       if (anchor >= currKeys.length) result.deletionAtEnd = true;
       else result.deletionsBefore.add(anchor);
