@@ -330,15 +330,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 }
 
 /* ---- VCS change markers ----
- * decoration은 .bn-block-content 에 붙는다(vcsPlugin.ts 참조). 마커 바는 ::before,
- * 삭제 삼각형은 ::after 를 쓴다 — 한 블록이 둘 다 가질 수 있다.
- * 절대 위치의 기준을 만들기 위해 마커가 붙은 블록에만 position:relative 를 준다.
+ * decoration 클래스는 .bn-block-content 에 붙는다(vcsPlugin.ts 참조).
+ *
+ * 이 블록에는 실물 검증으로만 드러난 함정이 두 개 있다. 둘 다 자동 테스트로 못 잡는다
+ * (vitest 는 css:false 로 돌아 스타일을 아예 로드하지 않는다). 되돌리지 말 것.
+ *
+ * 1) `.bn-block-content::before` 는 남의 자리다. BlockNote 가 리스트 불릿을 여기에
+ *    그린다(bulletListItem 에서 content:"•", width:24px). 여기에 배경과 높이를 얹으면
+ *    불릿을 감싼 24px 짜리 색 덩어리가 되어 "마커가 너무 크게 나온다"로 보인다.
+ *    ::after 는 확인한 모든 블록 타입에서 비어 있어(content:none) 상태 바가 여기 산다.
+ *
+ * 2) 높이는 `height: 100%` 로 준다. `top:0; bottom:0` 조합은 쓰면 안 된다.
+ *    .bn-block-content 가 row flex 컨테이너라(같은 이유로 커스텀 블록도 flex:1 이 필요)
+ *    이걸 포함 블록으로 갖는 절대 위치 유사요소에서 높이가 0 으로 붕괴한다. 배경색·좌표·
+ *    폭은 정상 계산되고 getComputedStyle 도 정상값을 돌려주는데 그릴 면적만 없어서,
+ *    마커가 아무 신호 없이 사라진다.
  */
 .markora-shell {
   --markora-vcs-added: #59a869;
   --markora-vcs-modified: #4a86c8;
   /* 삭제는 수정과 다른 색이어야 한다. 같은 팔레트에서 파랑이 '수정'을 뜻하는데
-     삭제 삼각형까지 파랑이면 잘못된 정보를 준다. IDE도 삭제에 별도 색을 쓴다. */
+     삭제 표시까지 파랑이면 잘못된 정보를 준다. IDE도 삭제에 별도 색을 쓴다. */
   --markora-vcs-deleted: #9a9a9a;
 }
 [data-mantine-color-scheme="dark"] .markora-shell {
@@ -347,20 +359,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   --markora-vcs-deleted: #6e6e6e;
 }
 
+/* ---- 상태 바 (추가/수정): .bn-block-content 의 ::after ---- */
 .markora-shell .bn-block-content.markora-vcs-added,
-.markora-shell .bn-block-content.markora-vcs-modified,
-.markora-shell .bn-block-content.markora-vcs-deleted-before,
-.markora-shell .bn-block-content.markora-vcs-deleted-after {
+.markora-shell .bn-block-content.markora-vcs-modified {
   position: relative;
 }
-
-/* height:100% 를 쓰고 bottom 은 건드리지 않는다. .bn-block-content 는 row flex 컨테이너라
- * (같은 이유로 커스텀 블록도 flex:1 이 필요하다), 이걸 포함 블록으로 갖는 절대 위치
- * 유사요소에서 `top:0; bottom:0` 으로 높이를 늘리면 Chromium 에서 높이가 0 으로 붕괴한다.
- * 배경색·좌표·폭은 정상 계산되는데 그릴 면적만 없어서, 마커가 조용히 안 보인다.
- * DO NOT 다시 top/bottom 쌍으로 되돌리지 말 것 — 자동 테스트로 못 잡는다(vitest 는 css:false). */
-.markora-shell .bn-block-content.markora-vcs-added::before,
-.markora-shell .bn-block-content.markora-vcs-modified::before {
+.markora-shell .bn-block-content.markora-vcs-added::after,
+.markora-shell .bn-block-content.markora-vcs-modified::after {
   content: '';
   position: absolute;
   left: -50px;
@@ -370,18 +375,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   border-radius: 1px;
   pointer-events: none;
 }
-.markora-shell .bn-block-content.markora-vcs-added::before {
+.markora-shell .bn-block-content.markora-vcs-added::after {
   background: var(--markora-vcs-added);
 }
-.markora-shell .bn-block-content.markora-vcs-modified::before {
+.markora-shell .bn-block-content.markora-vcs-modified::after {
   background: var(--markora-vcs-modified);
 }
 
-.markora-shell .bn-block-content.markora-vcs-deleted-before::after,
-.markora-shell .bn-block-content.markora-vcs-deleted-after::after {
+/* ---- 삭제 표시: 블록 래퍼(.bn-block-outer)의 ::before ----
+ * .bn-block-content 의 유사요소 두 개는 각각 BlockNote 불릿(::before)과 위 상태 바
+ * (::after)가 이미 쓴다. 클래스는 .bn-block-content 에 붙으므로 :has() 로 래퍼에서
+ * 역참조한다. 자손이 아니라 직계 경로로 좁혀야 부모 블록까지 잘못 매칭되지 않는다.
+ * (:has() 는 Chromium 105+; 기준 플랫폼 2024.2 의 JCEF 는 그보다 훨씬 최신이다.) */
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-before),
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-after) {
+  position: relative;
+}
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-before)::before,
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-after)::before {
   content: '';
   position: absolute;
-  left: -52px;
+  left: 2px;
   width: 0;
   height: 0;
   border-left: 6px solid var(--markora-vcs-deleted);
@@ -389,6 +403,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   border-bottom: 4px solid transparent;
   pointer-events: none;
 }
-.markora-shell .bn-block-content.markora-vcs-deleted-before::after { top: -4px; }
-.markora-shell .bn-block-content.markora-vcs-deleted-after::after { bottom: -4px; }
-
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-before)::before {
+  top: -4px;
+}
+.markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-after)::before {
+  bottom: -4px;
+}

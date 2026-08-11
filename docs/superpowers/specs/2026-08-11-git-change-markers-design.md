@@ -255,6 +255,14 @@ CSS `::before`가 `.bn-editor`의 54px 좌측 여백 바깥쪽 끝에 3px 세로
 
 따라서 baseline도 자기 `BlockNoteEditor` 인스턴스에 `replaceBlocks`로 통과시켜 같은 정규화를 거치게 한다. 인스턴스는 지연 생성해 재사용하며, 재파싱은 git 상태가 바뀔 때만 일어난다.
 
+### `.bn-block-content::before` 는 BlockNote 가 이미 쓴다 — 상태 바는 `::after` 에
+
+BlockNote 는 리스트 불릿을 `.bn-block-content::before` 에 그린다(`bulletListItem` 에서 `content: "•"`, `width: 24px`). 여기에 배경과 높이를 얹으면 `content` 와 `width` 는 BlockNote 규칙이 이기고 `background`·`left`·`height` 만 우리 것이 이겨서, **불릿을 감싼 24px 짜리 색 덩어리**가 된다. 문단은 3px 바로 정상인데 리스트 항목만 뭉텅이로 보인다.
+
+`::after` 는 확인한 모든 블록 타입(paragraph / heading / bulletListItem / codeBlock)에서 비어 있으므로 상태 바는 여기 둔다.
+
+삭제 표시는 `.bn-block-content` 의 유사요소가 둘 다 찬 상태라 블록 래퍼로 내보냈다. 클래스는 `.bn-block-content` 에 붙으므로 `.bn-block-outer:has(> .bn-block > .markora-vcs-deleted-*)` 로 역참조한다. 자손 선택자가 아니라 직계 경로여야 부모 블록까지 잘못 매칭되지 않는다.
+
 ### 마커 바 높이는 `height: 100%` 로 준다 (`top:0; bottom:0` 금지)
 
 `.bn-block-content` 는 row flex 컨테이너다. 이걸 포함 블록으로 갖는 절대 위치 유사요소에서 `top: 0; bottom: 0` 으로 높이를 늘리면 Chromium 에서 **높이가 0 으로 붕괴한다.** 배경색·좌표·폭은 모두 정상으로 계산되고 `getComputedStyle` 도 정상값을 돌려주는데 그릴 면적만 없어서, 마커가 아무 신호 없이 안 보인다.
