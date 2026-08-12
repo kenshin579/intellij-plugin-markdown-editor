@@ -1,7 +1,8 @@
 # Git 변경분 마커(gutter change marker) 표시 설계
 
 - 날짜: 2026-08-11
-- 상태: 구현 완료 (자동 테스트 397개 통과 · `./gradlew build` 성공 · **runIde 수동 검증 미실시**)
+- 상태: 구현 완료 (자동 테스트 397개 통과 · `./gradlew build` 성공 · runIde 에서 마커 표시 확인)
+- 미확인 항목: 라이트 테마 대비, 커밋/브랜치 전환 시 baseline 갱신, 실제 삭제 상황의 삼각형 렌더
 - 대상 저장소: `markora/` (Kotlin + frontend)
 
 ## 배경 / 문제
