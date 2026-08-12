@@ -332,19 +332,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 /* ---- VCS change markers ----
  * decoration 클래스는 .bn-block-content 에 붙는다(vcsPlugin.ts 참조).
  *
- * 이 블록에는 실물 검증으로만 드러난 함정이 두 개 있다. 둘 다 자동 테스트로 못 잡는다
- * (vitest 는 css:false 로 돌아 스타일을 아예 로드하지 않는다). 되돌리지 말 것.
+ * .bn-block-content 의 유사요소는 둘 다 BlockNote 소유다. 실물에서 확인한 사실이다:
+ *   ::before → 리스트 불릿 (bulletListItem 에서 content:"•", width:24px)
+ *   ::after  → 빈 블록 플레이스홀더 (content:"Enter text or type '/' for commands")
+ * 여기에 마커를 얹으면 속성별로 승자가 갈려 남의 콘텐츠가 우리 상자에 갇힌다.
+ * 불릿은 24px 색 덩어리가 되고, 플레이스홀더는 3px 폭에 갇혀 세로로 쏟아진다.
+ * 그래서 상태 바는 유사요소를 아예 쓰지 않고 border-left 로 그린다.
  *
- * 1) `.bn-block-content::before` 는 남의 자리다. BlockNote 가 리스트 불릿을 여기에
- *    그린다(bulletListItem 에서 content:"•", width:24px). 여기에 배경과 높이를 얹으면
- *    불릿을 감싼 24px 짜리 색 덩어리가 되어 "마커가 너무 크게 나온다"로 보인다.
- *    ::after 는 확인한 모든 블록 타입에서 비어 있어(content:none) 상태 바가 여기 산다.
+ * 좌표 계산: 블록 왼쪽 끝이 54px(= .bn-editor 의 padding-inline)에 있다.
+ *   margin-left:-50px  → 상자 왼쪽 끝을 4px 로 당긴다 (IDE gutter 위치)
+ *   border-left:3px    → 4~7px 를 바가 차지한다
+ *   padding-left:47px  → 본문을 다시 54px 로 되돌린다
+ *   width:calc(100%+50px) → box-sizing:border-box + 고정폭이라, 이게 없으면
+ *                           오른쪽 끝이 50px 줄어 표시된 블록만 줄바꿈이 달라진다
  *
- * 2) 높이는 `height: 100%` 로 준다. `top:0; bottom:0` 조합은 쓰면 안 된다.
- *    .bn-block-content 가 row flex 컨테이너라(같은 이유로 커스텀 블록도 flex:1 이 필요)
- *    이걸 포함 블록으로 갖는 절대 위치 유사요소에서 높이가 0 으로 붕괴한다. 배경색·좌표·
- *    폭은 정상 계산되고 getComputedStyle 도 정상값을 돌려주는데 그릴 면적만 없어서,
- *    마커가 아무 신호 없이 사라진다.
+ * 이 블록은 vitest 로 검증할 수 없다(css:false 로 돌아 스타일을 로드하지 않는다).
+ * 되돌리기 전에 반드시 runIde 나 브라우저로 실물을 확인할 것.
  */
 .markora-shell {
   --markora-vcs-added: #59a869;
@@ -359,33 +362,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   --markora-vcs-deleted: #6e6e6e;
 }
 
-/* ---- 상태 바 (추가/수정): .bn-block-content 의 ::after ---- */
+/* ---- 상태 바 (추가/수정) ---- */
 .markora-shell .bn-block-content.markora-vcs-added,
 .markora-shell .bn-block-content.markora-vcs-modified {
-  position: relative;
+  margin-left: -50px;
+  padding-left: 47px;
+  width: calc(100% + 50px);
+  border-left: 3px solid transparent;
 }
-.markora-shell .bn-block-content.markora-vcs-added::after,
-.markora-shell .bn-block-content.markora-vcs-modified::after {
-  content: '';
-  position: absolute;
-  left: -50px;
-  top: 0;
-  height: 100%;
-  width: 3px;
-  border-radius: 1px;
-  pointer-events: none;
+.markora-shell .bn-block-content.markora-vcs-added {
+  border-left-color: var(--markora-vcs-added);
 }
-.markora-shell .bn-block-content.markora-vcs-added::after {
-  background: var(--markora-vcs-added);
-}
-.markora-shell .bn-block-content.markora-vcs-modified::after {
-  background: var(--markora-vcs-modified);
+.markora-shell .bn-block-content.markora-vcs-modified {
+  border-left-color: var(--markora-vcs-modified);
 }
 
-/* ---- 삭제 표시: 블록 래퍼(.bn-block-outer)의 ::before ----
- * .bn-block-content 의 유사요소 두 개는 각각 BlockNote 불릿(::before)과 위 상태 바
- * (::after)가 이미 쓴다. 클래스는 .bn-block-content 에 붙으므로 :has() 로 래퍼에서
- * 역참조한다. 자손이 아니라 직계 경로로 좁혀야 부모 블록까지 잘못 매칭되지 않는다.
+/* ---- 삭제 표시 ----
+ * 블록 래퍼(.bn-block-outer)의 ::before 에 그린다. 이 요소의 유사요소는 BlockNote 가
+ * 쓰지 않는 것을 확인했다. 클래스는 안쪽 .bn-block-content 에 붙으므로 :has() 로
+ * 역참조하되, 자손이 아니라 직계 경로여야 부모 블록까지 잘못 매칭되지 않는다.
  * (:has() 는 Chromium 105+; 기준 플랫폼 2024.2 의 JCEF 는 그보다 훨씬 최신이다.) */
 .markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-before),
 .markora-shell .bn-block-outer:has(> .bn-block > .markora-vcs-deleted-after) {

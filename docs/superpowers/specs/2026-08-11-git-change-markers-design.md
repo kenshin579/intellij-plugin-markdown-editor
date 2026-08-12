@@ -255,23 +255,42 @@ CSS `::before`가 `.bn-editor`의 54px 좌측 여백 바깥쪽 끝에 3px 세로
 
 따라서 baseline도 자기 `BlockNoteEditor` 인스턴스에 `replaceBlocks`로 통과시켜 같은 정규화를 거치게 한다. 인스턴스는 지연 생성해 재사용하며, 재파싱은 git 상태가 바뀔 때만 일어난다.
 
-### `.bn-block-content::before` 는 BlockNote 가 이미 쓴다 — 상태 바는 `::after` 에
+### `.bn-block-content` 의 유사요소는 쓸 수 없다 — 상태 바는 `border-left` 로 그린다
 
-BlockNote 는 리스트 불릿을 `.bn-block-content::before` 에 그린다(`bulletListItem` 에서 `content: "•"`, `width: 24px`). 여기에 배경과 높이를 얹으면 `content` 와 `width` 는 BlockNote 규칙이 이기고 `background`·`left`·`height` 만 우리 것이 이겨서, **불릿을 감싼 24px 짜리 색 덩어리**가 된다. 문단은 3px 바로 정상인데 리스트 항목만 뭉텅이로 보인다.
+이 요소의 `::before` 와 `::after` 는 **둘 다 BlockNote 소유**다. 실물로 확인했다:
 
-`::after` 는 확인한 모든 블록 타입(paragraph / heading / bulletListItem / codeBlock)에서 비어 있으므로 상태 바는 여기 둔다.
+| 유사요소 | BlockNote 용도 |
+|---|---|
+| `::before` | 리스트 불릿 (`bulletListItem` 에서 `content: "•"`, `width: 24px`) |
+| `::after` | 빈 블록 플레이스홀더 (`content: "Enter text or type '/' for commands"`) |
 
-삭제 표시는 `.bn-block-content` 의 유사요소가 둘 다 찬 상태라 블록 래퍼로 내보냈다. 클래스는 `.bn-block-content` 에 붙으므로 `.bn-block-outer:has(> .bn-block > .markora-vcs-deleted-*)` 로 역참조한다. 자손 선택자가 아니라 직계 경로여야 부모 블록까지 잘못 매칭되지 않는다.
+여기에 마커를 얹으면 속성별로 승자가 갈려 **남의 콘텐츠가 우리 상자에 갇힌다.** `::before` 에 얹었을 때는 불릿이 24px 색 덩어리가 됐고, `::after` 로 옮겼더니 플레이스홀더가 3px 폭에 갇혀 세로로 한 글자씩 쏟아졌다. 자리를 옮겨 다니는 건 두더지잡기다.
 
-### 마커 바 높이는 `height: 100%` 로 준다 (`top:0; bottom:0` 금지)
+그래서 상태 바는 유사요소를 쓰지 않고 `border-left` 로 그린다:
 
-`.bn-block-content` 는 row flex 컨테이너다. 이걸 포함 블록으로 갖는 절대 위치 유사요소에서 `top: 0; bottom: 0` 으로 높이를 늘리면 Chromium 에서 **높이가 0 으로 붕괴한다.** 배경색·좌표·폭은 모두 정상으로 계산되고 `getComputedStyle` 도 정상값을 돌려주는데 그릴 면적만 없어서, 마커가 아무 신호 없이 안 보인다.
+```
+margin-left: -50px        상자 왼쪽 끝을 4px 로 (IDE gutter 위치)
+border-left: 3px          4~7px 를 바가 차지
+padding-left: 47px        본문을 다시 54px 로 복원
+width: calc(100% + 50px)  box-sizing:border-box + 고정폭이라 필수.
+                          없으면 오른쪽 끝이 50px 줄어 표시된 블록만 줄바꿈이 달라진다
+```
 
-첫 구현이 정확히 이 함정에 빠졌고, 증상이 "기능 전체가 동작 안 함"과 구분되지 않았다. 진단에는 JCEF 콘솔을 IDE 로그로 넘기는 임시 계측과 브라우저에서 유사요소를 극단적 스타일로 강제 렌더해보는 대조 실험이 필요했다.
+검증값(실측): 세 타입 모두 바 x=4, 오른쪽 끝과 본문 시작이 미표시 블록과 정확히 일치, 리스트 불릿 들여쓰기 보존.
 
-**vitest 는 `css: false` 로 돌기 때문에 이 부류는 자동 테스트로 잡히지 않는다.** `styles.css` 의 주석이 유일한 방어선이다.
+삭제 표시만 유사요소가 필요한데, 블록 래퍼(`.bn-block-outer`)의 것은 BlockNote 가 쓰지 않는 것을 확인해 거기 둔다. 클래스는 안쪽 `.bn-block-content` 에 붙으므로 `:has(> .bn-block > .markora-vcs-deleted-*)` 로 역참조하되, 자손이 아니라 직계 경로여야 부모 블록까지 잘못 매칭되지 않는다.
+
+### 절대 위치 유사요소를 `top:0; bottom:0` 로 늘리지 말 것
+
+이건 위 방식으로 바꾸기 전에 먼저 밟은 함정이다. `.bn-block-content` 가 row flex 컨테이너라, 이걸 포함 블록으로 갖는 절대 위치 유사요소에서 `top: 0; bottom: 0` 조합은 Chromium 에서 **높이가 0 으로 붕괴한다.** 배경색·좌표·폭은 모두 정상 계산되고 `getComputedStyle` 도 정상값을 돌려주는데 그릴 면적만 없어서, 마커가 아무 신호 없이 사라진다. 필요하면 `height: 100%` 를 쓴다.
 
 같은 뿌리의 선례: 커스텀 블록(mermaid/katex)이 row flex item 이라 `flex: 1` 없이는 폭이 안 늘어나는 문제.
+
+### 이 세 가지는 자동 테스트로 못 잡는다
+
+`vitest` 는 `css: false` 로 돌아 스타일을 아예 로드하지 않는다. `styles.css` 의 주석이 유일한 방어선이므로 배경까지 적어 두었다. 이 영역을 손대면 `runIde` 나 브라우저로 실물을 봐야 한다.
+
+**브라우저로 보는 법**: 페이지는 IDE 내장 서버가 HTTP 로 서빙하므로 일반 브라우저에서 직접 열어 devtools 로 검사할 수 있다 — `http://localhost:<port>/markora/resources/blocknote/dist/index.html?filePath=<enc>&serverUrl=<enc>&dark=true`. 포트는 63342 부터 스캔하면 찾힌다. JCEF 콘솔을 봐야 하면 `MarkdownHtmlPanel.setupHandlers()` 에 `CefDisplayHandlerAdapter.onConsoleMessage` 를 임시로 달아 `idea.log` 로 넘긴다.
 
 ## 구현 중 확인해야 할 항목
 
