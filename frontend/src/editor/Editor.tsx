@@ -22,6 +22,7 @@ import {
   type SearchSummary,
 } from '../search/searchPlugin';
 import type { MatchOptions } from '../search/findMatches';
+import { useVcsMarkers } from '../vcs/useVcsMarkers';
 
 interface Props {
   bridge: MarkoraBridge;
@@ -257,6 +258,9 @@ export function Editor({ bridge }: Props) {
   useEffect(() => {
     reinitOnThemeChange(bridge.getContext().initialTheme);
   }, [bridge]);
+
+  // VCS 변경 마커 (baseline 조회 + 블록 diff + decoration)
+  useVcsMarkers(editor, bridge);
 
   const handleSearch = useCallback((query: string, options: MatchOptions) => {
     const view = editor.prosemirrorView;

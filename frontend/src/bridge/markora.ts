@@ -1,6 +1,6 @@
-import type { BridgeContext, MarkoraBridge, Theme, UploadResult } from '../types';
+import type { BridgeContext, MarkoraBridge, Theme, UploadResult, VcsBaseline } from '../types';
 import { splitFrontmatter, joinFrontmatter } from './transform';
-import { rewriteImagePathsForDisplay, restoreImagePaths } from './imageMap';
+import { rewriteImagePathsForDisplay, restoreImagePaths, dirOf } from './imageMap';
 
 export function parseQueryContext(href: string): BridgeContext {
   const url = new URL(href);
@@ -13,6 +13,7 @@ export function parseQueryContext(href: string): BridgeContext {
 export function createBridge(ctx: BridgeContext): MarkoraBridge {
   const themeListeners = new Set<(t: Theme) => void>();
   const reloadListeners = new Set<() => void>();
+  const vcsListeners = new Set<() => void>();
   // (BlockNote가 재작성한 절대 이미지 URL → 원본 경로) 매핑. 저장 시 역변환에 사용.
   const imageMap = new Map<string, string>();
   // (local-image URL → 원본 HTML <img> 태그 전체) 매핑. 저장 시 markdown 이미지를
@@ -27,6 +28,9 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       },
       reloadFromDisk: () => {
         reloadListeners.forEach(cb => cb());
+      },
+      vcsChanged: () => {
+        vcsListeners.forEach(cb => cb());
       },
     };
   }
@@ -44,8 +48,7 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       // 본문의 상대경로 이미지를 디스크에서 서빙되는 local-image URL로 재작성한다.
       // (그래야 BlockNote <img>가 실제 파일을 가리켜 렌더링됨) 동시에 저장 시 원본
       // 상대경로로 되돌리기 위한 매핑을 등록한다.
-      const normalized = ctx.filePath.replace(/\\/g, '/');
-      const mdDir = normalized.substring(0, normalized.lastIndexOf('/'));
+      const mdDir = dirOf(ctx.filePath);
       const { body: rewritten, map, htmlMap } = rewriteImagePathsForDisplay(body, mdDir, ctx.serverUrl);
       for (const [url, original] of map) {
         imageMap.set(url, original);
@@ -94,8 +97,7 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
         throw new Error(`uploadImage: server returned no succMap entries (code=${json?.code})`);
       }
       const relativePath = succMap[firstKey] as string;
-      const normalized = ctx.filePath.replace(/\\/g, '/');
-      const dir = normalized.substring(0, normalized.lastIndexOf('/'));
+      const dir = dirOf(ctx.filePath);
       const absolutePath = `${dir}/${relativePath}`;
       const url = `${ctx.serverUrl}api/local-image?path=${encodeURIComponent(absolutePath)}`;
       // 저장 시 이 절대 URL을 파일에는 상대경로로 기록하도록 매핑 등록
@@ -112,6 +114,20 @@ export function createBridge(ctx: BridgeContext): MarkoraBridge {
       reloadListeners.add(cb);
       return () => reloadListeners.delete(cb);
     },
+
+    async fetchVcsBaseline(): Promise<VcsBaseline> {
+      const res = await fetch(
+        `${ctx.serverUrl}api/vcs/baseline?path=${encodeURIComponent(ctx.filePath)}`
+      );
+      if (!res.ok) throw new Error(`fetchVcsBaseline failed: ${res.status}`);
+      const data = await res.json();
+      return { status: data.status, content: data.content ?? null };
+    },
+
+    onVcsChange(cb) {
+      vcsListeners.add(cb);
+      return () => vcsListeners.delete(cb);
+    },
   };
 }
 
@@ -120,10 +136,12 @@ export function createMockBridge(): MarkoraBridge {
   let storedMd = '# Markora dev mock\n\n*편집 가능합니다.*\n';
   const themeListeners = new Set<(t: Theme) => void>();
   const reloadListeners = new Set<() => void>();
+  const vcsListeners = new Set<() => void>();
   if (typeof window !== 'undefined') {
     window.markora = {
       applyTheme: (t: Theme) => themeListeners.forEach(cb => cb(t)),
       reloadFromDisk: () => reloadListeners.forEach(cb => cb()),
+      vcsChanged: () => vcsListeners.forEach(cb => cb()),
     };
   }
   return {
@@ -143,5 +161,9 @@ export function createMockBridge(): MarkoraBridge {
     async uploadImage(file: File) { return { url: URL.createObjectURL(file) }; },
     onThemeChange(cb) { themeListeners.add(cb); return () => themeListeners.delete(cb); },
     onReloadRequest(cb) { reloadListeners.add(cb); return () => reloadListeners.delete(cb); },
+    async fetchVcsBaseline(): Promise<VcsBaseline> {
+      return { status: 'unavailable', content: null };
+    },
+    onVcsChange(cb) { vcsListeners.add(cb); return () => vcsListeners.delete(cb); },
   };
 }

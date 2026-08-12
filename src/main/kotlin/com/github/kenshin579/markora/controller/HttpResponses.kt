@@ -31,3 +31,22 @@ internal fun sendTextResponse(
     }
     resp.send(channel, request)
 }
+
+/**
+ * 문자열을 JSON 문자열 리터럴 내부에 넣을 수 있게 이스케이프한다(따옴표는 포함하지 않는다).
+ * `\n`/`\r`/`\t` 외의 제어문자도 `\uXXXX`로 처리해 잘못된 JSON 생성을 막는다.
+ */
+internal fun escapeJsonString(raw: String): String {
+    val sb = StringBuilder(raw.length + 16)
+    for (ch in raw) {
+        when (ch) {
+            '\\' -> sb.append("\\\\")
+            '"' -> sb.append("\\\"")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            else -> if (ch < ' ') sb.append(String.format("\\u%04x", ch.code)) else sb.append(ch)
+        }
+    }
+    return sb.toString()
+}
